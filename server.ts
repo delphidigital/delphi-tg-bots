@@ -1,8 +1,8 @@
 import express from 'express';
-import { readsBot } from './bots/reads.js';
+import { readsBot } from './bots/reads';
 
 const app = express();
-const port = process.env.DELPHI_READS_BOT_PORT;
+const port = process.env.DELPHI_READS_BOT_PORT || 6000;
 
 const readsBotConfiguration = {};
 const bot = readsBot(readsBotConfiguration);
