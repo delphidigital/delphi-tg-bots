@@ -3,7 +3,7 @@ import { message } from 'telegraf/filters';
 import type { Update } from 'telegraf/types';
 import Markup from 'telegraf/markup';
 
-type ReadsState = 'await_title' | 'await_url' | 'build' | 'none';
+type ReadsState = 'await_description' | 'await_title' | 'await_url' | 'build' | 'none';
 
 interface DelphiApi {
   baseUrl: string;
@@ -155,6 +155,16 @@ const displayMenu = async (ctx: ReadsContext) => {
   await ctx.reply('What would you like to do?', buttons);
 };
 
+const returnToBuildStateAndRenderPreview = async (ctx: ReadsContext) => {
+  ctx.session.state = 'build';
+  await replyWithPreview(ctx);
+};
+
+const resetState = (ctx: ReadsContext) => {
+  ctx.session.state = 'none';
+  ctx.session.item = createNewItem();
+};
+
 /*
  *
  * handlers
@@ -162,9 +172,9 @@ const displayMenu = async (ctx: ReadsContext) => {
  */
 
 const handleNew = async (ctx: ReadsContext) => {
-  ctx.session.item = createNewItem();
+  resetState(ctx);
   ctx.session.state = 'await_url';
-  await ctx.reply('What url do you want post?');
+  await ctx.reply('what url do you want post?');
 };
 
 const handlePost = async (ctx: ReadsContext) => {
@@ -175,7 +185,8 @@ const handlePost = async (ctx: ReadsContext) => {
 
 const handleSetDescription = async (ctx: ReadsContext) => {
   ensureLinkSet(ctx, async () => {
-    await ctx.reply('TODO: implement me');
+    ctx.session.state = 'await_description';
+    await ctx.reply('what description do you want?');
   });
 };
 
@@ -188,7 +199,7 @@ const handleSetTaxonomy = async (ctx: ReadsContext) => {
 const handleSetTitle = async (ctx: ReadsContext) => {
   ensureLinkSet(ctx, async () => {
     ctx.session.state = 'await_title';
-    await ctx.reply('What title do you want?');
+    await ctx.reply('what title do you want?');
   });
 };
 
@@ -198,7 +209,31 @@ const handleSetTag = async (ctx: ReadsContext) => {
   });
 };
 
-const handleUrl = async (url: string, ctx: ReadsContext, config: ReadsConfig) => {
+/*
+ *
+ * Update Handlers
+ *
+ */
+
+const handleUpdateDescription = async (description: string, ctx: ReadsContext) => {
+  if (description.length > 500) {
+    await ctx.reply('sorry, that description too long');
+    await handleSetDescription(ctx);
+    return;
+  }
+
+  ctx.session.item.description = description;
+  await returnToBuildStateAndRenderPreview(ctx);
+};
+
+const handleUpdateTitle = async (title: string, ctx: ReadsContext) => {
+  ctx.session.item.title = title;
+  await returnToBuildStateAndRenderPreview(ctx);
+};
+
+const handleUpdateUrl = async (url: string, ctx: ReadsContext, config: ReadsConfig) => {
+  resetState(ctx);
+
   const cleanUrl = normalizeUrl(url);
   let metadata: UrlMetadata;
 
@@ -212,13 +247,19 @@ const handleUrl = async (url: string, ctx: ReadsContext, config: ReadsConfig) =>
     return;
   }
 
+  const { description, image, title } = metadata;
+
   if (!cleanUrl.includes('x.com')) {
     // not twitter, so save the title
-    ctx.session.item.title = metadata.title || '';
+    ctx.session.item.title = title || '';
   }
 
-  ctx.session.item.description = metadata.description || '';
-  ctx.session.item.image_url = metadata.image || '';
+  ctx.session.item.description
+    = (description && description.length > 500)
+      ? description.substring(0, 497) + '...'
+      : description || '';
+
+  ctx.session.item.image_url = image || '';
   ctx.session.state = 'build';
 
   await replyWithPreview(ctx);
@@ -262,17 +303,18 @@ export const readsBot = (config: ReadsConfig) => {
     const { text } = ctx.msg;
 
     if (state === 'await_url') {
-      await handleUrl(text, ctx, config);
+      await handleUpdateUrl(text, ctx, config);
+    }
+    else if (state === 'await_description') {
+      await handleUpdateDescription(text, ctx);
     }
     else if (state === 'await_title') {
-      ctx.session.item.title = ctx.msg.text;
-      ctx.session.state = 'build';
-      await replyWithPreview(ctx);
+      await handleUpdateTitle(text, ctx);
     }
     else if (text === 'state') {
       await ctx.reply(`\`\`\`\n${JSON.stringify(ctx.session, null, 2)}\n\`\`\``, { parse_mode: 'Markdown' });
     } else if (text.startsWith('http')) {
-      await handleUrl(text, ctx, config);
+      await handleUpdateUrl(text, ctx, config);
     } else {
       // unknown message. see if it's a url...
       ctx.reply('paste a url to get started');
