@@ -19,7 +19,7 @@ const app = express();
 const port = DELPHI_READS_BOT_PORT || 6000;
 
 const sectors: Sector[] = [
-  { slug: 'All Sectors', title: 'All Sectors' },
+  { slug: 'general', title: 'General' },
   { slug: 'finance', title: 'DeFi' },
   { slug: 'infrastructure', title: 'Infrastructure' },
   { slug: 'macro-markets', title: 'Macro & Markets' },

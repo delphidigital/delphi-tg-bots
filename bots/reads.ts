@@ -16,7 +16,7 @@ export interface ReadsConfig {
   botToken: string;
   secretToken: string;
   webhookUrl: string;
-  sectors: Sector[]
+  sectors: Sector[];
 }
 
 export interface Sector {
@@ -169,7 +169,7 @@ const displaySectorMenu = async (ctx: ReadsContext, sectors: Sector[]) => {
   const buttonRows = [];
   for (let i = 0; i < sectors.length; i+= 2) {
     const chunk = sectors.slice(i, i + 2);
-    const sectorRowButtons = chunk.map(({ slug, title }) => {return Markup.button.callback(title, `setsector_${slug}`)});
+    const sectorRowButtons = chunk.map(({ slug, title }) => Markup.button.callback(title, `setsector_${slug}`));
     buttonRows.push(sectorRowButtons);
   }
   const buttons = Markup.inlineKeyboard(buttonRows);
