@@ -1,22 +1,23 @@
+import dotenv from 'dotenv';
 import crypto from 'crypto';
 import express from 'express';
 import { ReadsConfig, readsBot, Sector } from './bots/reads.js';
+import audit from 'express-requests-logger';
+import SmeeClient from 'smee-client';
+
+dotenv.config({ debug: true });
 
 const {
-  DELPHI_API_COOKIE_NAME,
-  DELPHI_API_COOKIE_VALUE,
   DELPHI_API_BASE_URL,
-  DELPHI_READS_BOT_PORT,
   DELPHI_READS_BOT_TOKEN,
-  DELPHI_READS_WEBHOOK_URL
+  DELPHI_READS_WEBHOOK_URL,
+  DEV,
+  PORT,
 } = process.env;
 
 if (!DELPHI_API_BASE_URL) throw new Error('"DELPHI_API_BASE_URL" env var is required!');
 if (!DELPHI_READS_BOT_TOKEN) throw new Error('"DELPHI_READS_BOT_TOKEN" env var is required!');
 if (!DELPHI_READS_WEBHOOK_URL) throw new Error('"DELPHI_READS_WEBHOOK_URL" env var is required!');
-
-const app = express();
-const port = DELPHI_READS_BOT_PORT || 6000;
 
 const sectors: Sector[] = [
   { slug: 'general', title: 'General' },
@@ -30,24 +31,54 @@ const readsBotConfiguration: ReadsConfig = {
   botToken: DELPHI_READS_BOT_TOKEN,
   delphiApi: {
     baseUrl: DELPHI_API_BASE_URL,
-    cookieName: DELPHI_API_COOKIE_NAME,
-    cookieValue: DELPHI_API_COOKIE_VALUE,
   },
-  secretToken: crypto.randomBytes(64).toString("hex"),
   sectors,
-  webhookUrl: DELPHI_READS_WEBHOOK_URL,
 };
 
 const bot = readsBot(readsBotConfiguration);
 
-app.use(await bot.createWebhook({ domain: DELPHI_READS_WEBHOOK_URL }));
-
-app.post(`/reads`, (req, res) => {
-  console.log('POST /reads');
-  res.sendStatus(200);
+console.log('Configuration:', {
+  DELPHI_API_BASE_URL,
+  DELPHI_READS_WEBHOOK_URL,
+  DELPHI_READS_BOT_TOKEN: DELPHI_READS_BOT_TOKEN.replaceAll(/./g, '*'),
 });
 
-// bot.launch();
+const readsWebhookPath = '/webhooks/reads';
+
+const app = express();
+const port = PORT || 5555;
+
+if (DEV) {
+  // setup webhook proxy to local server
+  const smee = new SmeeClient({
+    source: DELPHI_READS_WEBHOOK_URL,
+    target: `http://localhost:${port}${readsWebhookPath}`,
+    logger: console,
+  });
+
+  await smee.start();
+}
+
+// log requests
+app.use(audit({
+  request: {
+    maskHeaders: ['x-telegram-bot-api-secret-token']
+  }
+}));
+
+// use this instead of createWebhook() so we can easily proxy thru smee locally
+const secretToken = crypto.randomBytes(64).toString("hex");
+app.use(bot.webhookCallback(readsWebhookPath, { secretToken }));
+await bot.telegram.setWebhook(DELPHI_READS_WEBHOOK_URL, { secret_token: secretToken });
+
+// configure dev-only endpoints
+if (DEV) {
+  // for posting reads items to localhost when running locally
+  app.post(`/reads`, (req, res) => {
+    console.log('POST /reads', req.body);
+    res.sendStatus(200);
+  });
+}
 
 // Start Express Server
 app.listen(port, () => {
