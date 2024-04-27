@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 import express from 'express';
-import { ReadsConfig, readsBot } from './bots/reads.js';
+import { ReadsConfig, readsBot, Sector } from './bots/reads.js';
 
 const {
   DELPHI_API_COOKIE_NAME,
@@ -18,6 +18,14 @@ if (!DELPHI_READS_WEBHOOK_URL) throw new Error('"DELPHI_READS_WEBHOOK_URL" env v
 const app = express();
 const port = DELPHI_READS_BOT_PORT || 6000;
 
+const sectors: Sector[] = [
+  { slug: 'All Sectors', title: 'All Sectors' },
+  { slug: 'finance', title: 'DeFi' },
+  { slug: 'infrastructure', title: 'Infrastructure' },
+  { slug: 'macro-markets', title: 'Macro & Markets' },
+  { slug: 'metaverse', title: 'NFTs & Gaming' },
+];
+
 const readsBotConfiguration: ReadsConfig = {
   botToken: DELPHI_READS_BOT_TOKEN,
   delphiApi: {
@@ -26,6 +34,7 @@ const readsBotConfiguration: ReadsConfig = {
     cookieValue: DELPHI_API_COOKIE_VALUE,
   },
   secretToken: crypto.randomBytes(64).toString("hex"),
+  sectors,
   webhookUrl: DELPHI_READS_WEBHOOK_URL,
 };
 

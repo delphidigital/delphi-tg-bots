@@ -16,6 +16,12 @@ export interface ReadsConfig {
   botToken: string;
   secretToken: string;
   webhookUrl: string;
+  sectors: Sector[]
+}
+
+export interface Sector {
+  slug: string;
+  title: string;
 }
 
 interface ReadsItem {
@@ -77,6 +83,10 @@ Type: ${item.tags[0] || ''}
 Image: ${item.image_url}
 `;
 };
+
+const getSectorLabel = (sectors: Sector[], sector: string) => {
+  return sectors.find(({slug}) => slug === sector).title;
+}
 
 const normalizeUrl = (url: string) => {
   let cleanUrl = url;
@@ -155,6 +165,17 @@ const displayMenu = async (ctx: ReadsContext) => {
   await ctx.reply('What would you like to do?', buttons);
 };
 
+const displaySectorMenu = async (ctx: ReadsContext, sectors: Sector[]) => {
+  const buttonRows = [];
+  for (let i = 0; i < sectors.length; i+= 2) {
+    const chunk = sectors.slice(i, i + 2);
+    const sectorRowButtons = chunk.map(({ slug, title }) => {return Markup.button.callback(title, `setsector_${slug}`)});
+    buttonRows.push(sectorRowButtons);
+  }
+  const buttons = Markup.inlineKeyboard(buttonRows);
+  await ctx.reply('Select a sector:', buttons);
+};
+
 /*
  *
  * handlers
@@ -179,9 +200,9 @@ const handleSetDescription = async (ctx: ReadsContext) => {
   });
 };
 
-const handleSetTaxonomy = async (ctx: ReadsContext) => {
+const handleSetTaxonomy = async (ctx: ReadsContext, sectors: Sector[]) => {
   ensureLinkSet(ctx, async () => {
-    await ctx.reply('TODO: implement me');
+    await displaySectorMenu(ctx, sectors);
   });
 };
 
@@ -231,30 +252,36 @@ const handleUrl = async (url: string, ctx: ReadsContext, config: ReadsConfig) =>
  *
  */
 export const readsBot = (config: ReadsConfig) => {
-  const { botToken, secretToken: _, webhookUrl: _webhookUrlStr } = config;
+  const { botToken, sectors, secretToken: _, webhookUrl: _webhookUrlStr } = config;
   // const webhookUrl = new URL(webhookUrlStr);
 
   const bot = new Telegraf<ReadsContext>(botToken);
 
   // setup session
-  bot.use(session({ defaultSession: createDefaultSession }))
+  bot.use(session({ defaultSession: createDefaultSession }));
 
   // commands
   bot.command('new', handleNew);
   bot.command('post', handlePost);
   bot.command('preview', replyWithPreview);
   bot.command('setdescription', handleSetDescription);
-  bot.command('setsector', handleSetTaxonomy);
   bot.command('settitle', handleSetTitle);
   bot.command('settype', handleSetTag);
+  bot.command('setsector', async (ctx) => { await handleSetTaxonomy(ctx, config.sectors)});
 
   // actions
   bot.action('new', handleNew);
   bot.action('post', handlePost);
   bot.action('setdescription', handleSetDescription);
-  bot.action('setsector', handleSetTaxonomy);
   bot.action('settitle', handleSetTitle);
   bot.action('settype', handleSetTag);
+  bot.action('setsector', async (ctx) => { await handleSetTaxonomy(ctx, config.sectors)});
+
+  // dynamic actions
+  bot.action(/setsector_(.+)/, async (ctx) => {
+    ctx.session.item.taxonomy = [getSectorLabel(config.sectors, ctx.match[1])];
+    await replyWithPreview(ctx);
+  })
 
   // message handlers
   bot.on(message('text'), async (ctx) => {
