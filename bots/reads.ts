@@ -35,7 +35,9 @@ const defaultTagsForDomain: Record<string, ReadsTag[]> = {
 } as const;
 
 interface DelphiApi {
+  apiKey: string;
   baseUrl: string;
+  postReadsEndpoint: string;
 }
 
 export interface ReadsConfig {
@@ -214,6 +216,30 @@ const displayMenu = async (ctx: ReadsContext) => {
   await ctx.reply('What would you like to do?', buttons);
 };
 
+const publish = async (ctx: ReadsContext, config: ReadsConfig) => {
+  const { delphiApi: { apiKey, postReadsEndpoint } } = config;
+  const postReadsUrl = delphiApiUrl(postReadsEndpoint, config);
+  const item = {
+    ...ctx.session.item,
+    tg: ctx.callbackQuery.from.username
+  };
+
+  const response = await fetch(postReadsUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-reads-bot-api-key': apiKey
+    },
+    body: JSON.stringify(item)
+  });
+
+  const { ok } = await response.json();
+  
+  return ok
+    ? 'Item has been published, /new to publish another'
+    : 'Failed to publish item';
+};
+
 const displayOptionMenu = async (ctx: ReadsContext, options: Option<ReadsTag | SectorSlug>[], command: string, option: string) => {
   const buttonRows = [];
   for (let i = 0; i < options.length; i += 2) {
@@ -265,9 +291,9 @@ const handleNew = async (ctx: ReadsContext) => {
   await ctx.reply('what url do you want post?');
 };
 
-const handlePost = async (ctx: ReadsContext) => {
-  ensureLinkSet(ctx, async () => {
-    await ctx.reply('TODO: implement me');
+const handlePost = async (ctx: ReadsContext, config: ReadsConfig) => {
+  ensureLinkSet(ctx, async () => {    
+    await ctx.reply(await publish(ctx, config));
   });
 };
 
@@ -374,10 +400,12 @@ export const readsBot = (config: ReadsConfig) => {
   // setup session
   bot.use(session({ defaultSession: createDefaultSession }));
 
+  const handlePublish = (ctx) => handlePost(ctx, config);
+
   // commands
   bot.command('help', handleHelp);
   bot.command('new', handleNew);
-  bot.command('publish', handlePost);
+  bot.command('publish', handlePublish);
   bot.command('preview', replyWithPreview);
   bot.command('setdescription', handleSetDescription);
   bot.command('settitle', handleSetTitle);
@@ -387,7 +415,7 @@ export const readsBot = (config: ReadsConfig) => {
   // actions
   bot.action('help', handleHelp);
   bot.action('new', handleNew);
-  bot.action('publish', handlePost);
+  bot.action('publish', handlePublish);
   bot.action('setdescription', handleSetDescription);
   bot.action('settitle', handleSetTitle);
   bot.action('settype', handleSetTag);
