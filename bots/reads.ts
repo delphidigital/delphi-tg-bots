@@ -26,6 +26,14 @@ const sectors: Option<SectorSlug>[] = [
   { slug: 'metaverse', title: 'NFTs & Gaming' },
 ];
 
+const defaultTagsForDomain: Record<string, ReadsTag[]> = {
+  'bloomberg.com': ['news'],
+  'medium.com': ['reads'],
+  'spotify.com': ['podcast'],
+  'x.com': ['tweets'],
+  'youtube.com': ['media'],
+} as const;
+
 interface DelphiApi {
   baseUrl: string;
 }
@@ -153,6 +161,16 @@ const ensureLinkSet = async (ctx: ReadsContext, callback: Function) => {
   }
 
   await callback();
+};
+
+const defaultTagsForUrl = (url: string): ReadsTag[] => {
+  const domain = Object.keys(defaultTagsForDomain).find((domain) => url.includes(domain));
+
+  if (domain) {
+    return defaultTagsForDomain[domain];
+  }
+
+  return [];
 };
 
 /*
@@ -308,16 +326,12 @@ const handleUpdateUrl = async (url: string, ctx: ReadsContext, config: ReadsConf
 
   const { description, image, title } = metadata;
 
-  if (cleanUrl.includes('x.com')) {
-    ctx.session.item.tags = ['tweets'];
-  } else {
+  if (!cleanUrl.includes('x.com')) {
     // not twitter, so save the title
     ctx.session.item.title = title || '';
   }
 
-  if (cleanUrl.includes('youtube.com')) {
-    ctx.session.item.tags = ['media'];
-  }
+  ctx.session.item.tags = defaultTagsForUrl(cleanUrl);
 
   ctx.session.item.description
     = (description && description.length > 500)
