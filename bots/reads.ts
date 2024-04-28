@@ -196,9 +196,6 @@ const replyWithPreview = async (ctx: ReadsContext) => {
 const displayMenu = async (ctx: ReadsContext) => {
   const buttons = Markup.inlineKeyboard([
     [
-      Markup.button.callback('Help', 'help')
-    ],
-    [
       Markup.button.callback('Set Title', 'settitle'),
       Markup.button.callback('Set Description', 'setdescription')
     ],
@@ -208,8 +205,11 @@ const displayMenu = async (ctx: ReadsContext) => {
     ],
     [
       Markup.button.callback('Start Over', 'new'),
-      Markup.button.callback('Publish It!', 'publish')
+      Markup.button.callback('Help', 'help')
     ],
+    [
+      Markup.button.callback('Publish It!', 'publish')
+    ]
   ]);
   await ctx.reply('What would you like to do?', buttons);
 };
