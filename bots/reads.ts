@@ -7,15 +7,11 @@ type ReadsState = 'await_description' | 'await_title' | 'await_url' | 'build' | 
 
 interface DelphiApi {
   baseUrl: string;
-  cookieName?: string;
-  cookieValue?: string;
 }
 
 export interface ReadsConfig {
   delphiApi: DelphiApi;
   botToken: string;
-  secretToken: string;
-  webhookUrl: string;
   sectors: Sector[];
 }
 
@@ -85,7 +81,7 @@ Image: ${item.image_url}
 };
 
 const getSectorLabel = (sectors: Sector[], sector: string) => {
-  return sectors.find(({slug}) => slug === sector).title;
+  return sectors.find(({ slug }) => slug === sector).title;
 }
 
 const normalizeUrl = (url: string) => {
@@ -167,7 +163,7 @@ const displayMenu = async (ctx: ReadsContext) => {
 
 const displaySectorMenu = async (ctx: ReadsContext, sectors: Sector[]) => {
   const buttonRows = [];
-  for (let i = 0; i < sectors.length; i+= 2) {
+  for (let i = 0; i < sectors.length; i += 2) {
     const chunk = sectors.slice(i, i + 2);
     const sectorRowButtons = chunk.map(({ slug, title }) => Markup.button.callback(title, `setsector_${slug}`));
     buttonRows.push(sectorRowButtons);
@@ -255,6 +251,8 @@ const handleUpdateTitle = async (title: string, ctx: ReadsContext) => {
 const handleUpdateUrl = async (url: string, ctx: ReadsContext, config: ReadsConfig) => {
   resetState(ctx);
 
+  await ctx.reply('fetching that url, hang on a sec...');
+
   const cleanUrl = normalizeUrl(url);
   let metadata: UrlMetadata;
 
@@ -293,8 +291,7 @@ const handleUpdateUrl = async (url: string, ctx: ReadsContext, config: ReadsConf
  *
  */
 export const readsBot = (config: ReadsConfig) => {
-  const { botToken, sectors, secretToken: _, webhookUrl: _webhookUrlStr } = config;
-  // const webhookUrl = new URL(webhookUrlStr);
+  const { botToken, sectors } = config;
 
   const bot = new Telegraf<ReadsContext>(botToken);
 
@@ -308,7 +305,7 @@ export const readsBot = (config: ReadsConfig) => {
   bot.command('setdescription', handleSetDescription);
   bot.command('settitle', handleSetTitle);
   bot.command('settype', handleSetTag);
-  bot.command('setsector', async (ctx) => { await handleSetTaxonomy(ctx, config.sectors)});
+  bot.command('setsector', async (ctx) => { await handleSetTaxonomy(ctx, config.sectors) });
 
   // actions
   bot.action('new', handleNew);
@@ -316,13 +313,21 @@ export const readsBot = (config: ReadsConfig) => {
   bot.action('setdescription', handleSetDescription);
   bot.action('settitle', handleSetTitle);
   bot.action('settype', handleSetTag);
-  bot.action('setsector', async (ctx) => { await handleSetTaxonomy(ctx, config.sectors)});
+  bot.action('setsector', async (ctx) => { await handleSetTaxonomy(ctx, config.sectors) });
 
   // dynamic actions
   bot.action(/setsector_(.+)/, async (ctx) => {
     ctx.session.item.taxonomy = [getSectorLabel(config.sectors, ctx.match[1])];
     await replyWithPreview(ctx);
   })
+
+  bot.hears('state', async (ctx) => {
+    await ctx.reply(`\`\`\`\n${JSON.stringify(ctx.session, null, 2)}\n\`\`\``, { parse_mode: 'Markdown' });
+  });
+
+  bot.hears(/^https?\:/, async (ctx) => {
+    await handleUpdateUrl(ctx.msg.text, ctx, config);
+  });
 
   // message handlers
   bot.on(message('text'), async (ctx) => {
@@ -338,32 +343,11 @@ export const readsBot = (config: ReadsConfig) => {
     else if (state === 'await_title') {
       await handleUpdateTitle(text, ctx);
     }
-    else if (text === 'state') {
-      await ctx.reply(`\`\`\`\n${JSON.stringify(ctx.session, null, 2)}\n\`\`\``, { parse_mode: 'Markdown' });
-    } else if (text.startsWith('http')) {
-      await handleUpdateUrl(text, ctx, config);
-    } else {
+    else {
       // unknown message. see if it's a url...
       ctx.reply('paste a url to get started');
     }
   });
-
-  // launch bot
-  // const port = webhookUrl.port ? parseInt(webhookUrl.port) : 443;
-
-  // const webhookConfig = {
-  //   domain: webhookUrl.hostname,
-  //   port,
-  //   path: webhookUrl.pathname,
-  //   secretToken,
-  // }
-
-  // console.log(webhookConfig);
-
-  bot.launch();
-  // bot.launch({
-  //   webhook: webhookConfig
-  // });
 
   return bot;
 }
