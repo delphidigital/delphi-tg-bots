@@ -292,7 +292,7 @@ const handleNew = async (ctx: ReadsContext) => {
 };
 
 const handlePost = async (ctx: ReadsContext, config: ReadsConfig) => {
-  ensureLinkSet(ctx, async () => {    
+  ensureLinkSet(ctx, async () => {
     await ctx.reply(await publish(ctx, config));
   });
 };
