@@ -16,10 +16,11 @@ export interface ReadsConfig {
   botToken: string;
   secretToken: string;
   webhookUrl: string;
-  sectors: Sector[];
+  sectors: Option[];
+  types: Option[];
 }
 
-export interface Sector {
+export interface Option {
   slug: string;
   title: string;
 }
@@ -84,8 +85,8 @@ Image: ${item.image_url}
 `;
 };
 
-const getSectorLabel = (sectors: Sector[], sector: string) => {
-  return sectors.find(({slug}) => slug === sector).title;
+const getOptionLabel = (options: Option[], key: string) => {
+  return options.find(({ slug }) => slug === key).title;
 }
 
 const normalizeUrl = (url: string) => {
@@ -165,15 +166,15 @@ const displayMenu = async (ctx: ReadsContext) => {
   await ctx.reply('What would you like to do?', buttons);
 };
 
-const displaySectorMenu = async (ctx: ReadsContext, sectors: Sector[]) => {
+const displayOptionMenu = async (ctx: ReadsContext, options: Option[], command: string, option: string) => {
   const buttonRows = [];
-  for (let i = 0; i < sectors.length; i+= 2) {
-    const chunk = sectors.slice(i, i + 2);
-    const sectorRowButtons = chunk.map(({ slug, title }) => Markup.button.callback(title, `setsector_${slug}`));
-    buttonRows.push(sectorRowButtons);
+  for (let i = 0; i < options.length; i+= 2) {
+    const chunk = options.slice(i, i + 2);
+    const optionRowButtons = chunk.map(({ slug, title }) => Markup.button.callback(title, `${command}_${slug}`));
+    buttonRows.push(optionRowButtons);
   }
   const buttons = Markup.inlineKeyboard(buttonRows);
-  await ctx.reply('Select a sector:', buttons);
+  await ctx.reply(`Select a ${option}: `, buttons);
 };
 
 const returnToBuildStateAndRenderPreview = async (ctx: ReadsContext) => {
@@ -211,9 +212,15 @@ const handleSetDescription = async (ctx: ReadsContext) => {
   });
 };
 
-const handleSetTaxonomy = async (ctx: ReadsContext, sectors: Sector[]) => {
+const handleSetTaxonomy = async (ctx: ReadsContext, sectors: Option[]) => {
   ensureLinkSet(ctx, async () => {
-    await displaySectorMenu(ctx, sectors);
+    await displayOptionMenu(ctx, sectors, 'setsector', 'sector');
+  });
+};
+
+const handleSetTag = async (ctx: ReadsContext, types: Option[]) => {
+  ensureLinkSet(ctx, async () => {
+    await displayOptionMenu(ctx, types, 'settype', 'type');
   });
 };
 
@@ -221,12 +228,6 @@ const handleSetTitle = async (ctx: ReadsContext) => {
   ensureLinkSet(ctx, async () => {
     ctx.session.state = 'await_title';
     await ctx.reply('what title do you want?');
-  });
-};
-
-const handleSetTag = async (ctx: ReadsContext) => {
-  ensureLinkSet(ctx, async () => {
-    await ctx.reply('TODO: implement me');
   });
 };
 
@@ -307,20 +308,25 @@ export const readsBot = (config: ReadsConfig) => {
   bot.command('preview', replyWithPreview);
   bot.command('setdescription', handleSetDescription);
   bot.command('settitle', handleSetTitle);
-  bot.command('settype', handleSetTag);
-  bot.command('setsector', async (ctx) => { await handleSetTaxonomy(ctx, config.sectors)});
+  bot.command('settype', async (ctx) => { await handleSetTag(ctx, config.types) });
+  bot.command('setsector', async (ctx) => { await handleSetTaxonomy(ctx, config.sectors) });
 
   // actions
   bot.action('new', handleNew);
   bot.action('post', handlePost);
   bot.action('setdescription', handleSetDescription);
   bot.action('settitle', handleSetTitle);
-  bot.action('settype', handleSetTag);
-  bot.action('setsector', async (ctx) => { await handleSetTaxonomy(ctx, config.sectors)});
+
+  bot.action('settype', async (ctx) => { await handleSetTag(ctx, config.types) });
+  bot.action('setsector', async (ctx) => { await handleSetTaxonomy(ctx, config.sectors) });
 
   // dynamic actions
   bot.action(/setsector_(.+)/, async (ctx) => {
-    ctx.session.item.taxonomy = [getSectorLabel(config.sectors, ctx.match[1])];
+    ctx.session.item.taxonomy = [getOptionLabel(config.sectors, ctx.match[1])];
+    await replyWithPreview(ctx);
+  })
+  bot.action(/settype_(.+)/, async (ctx) => {
+    ctx.session.item.tags = [getOptionLabel(config.types, ctx.match[1])];
     await replyWithPreview(ctx);
   })
 
