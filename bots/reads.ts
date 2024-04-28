@@ -92,6 +92,14 @@ const createDefaultSession = (): ReadsSession => ({
  *
  */
 
+const helpText = () => {
+  return `
+For questions or feedback, please post in the Delphi Engineering telegram channel:
+
+[ENGINEERING] Delphi Engineering
+`;
+};
+
 const previewText = ({ item }: ReadsSession): string => {
   return `here is what we've got so far:
 
@@ -188,6 +196,9 @@ const replyWithPreview = async (ctx: ReadsContext) => {
 const displayMenu = async (ctx: ReadsContext) => {
   const buttons = Markup.inlineKeyboard([
     [
+      Markup.button.callback('Help', 'help')
+    ],
+    [
       Markup.button.callback('Set Title', 'settitle'),
       Markup.button.callback('Set Description', 'setdescription')
     ],
@@ -197,7 +208,7 @@ const displayMenu = async (ctx: ReadsContext) => {
     ],
     [
       Markup.button.callback('Start Over', 'new'),
-      Markup.button.callback('Post It!', 'post')
+      Markup.button.callback('Publish It!', 'publish')
     ],
   ]);
   await ctx.reply('What would you like to do?', buttons);
@@ -257,6 +268,12 @@ const handleNew = async (ctx: ReadsContext) => {
 const handlePost = async (ctx: ReadsContext) => {
   ensureLinkSet(ctx, async () => {
     await ctx.reply('TODO: implement me');
+  });
+};
+
+const handleHelp = async (ctx: ReadsContext) => {
+  ensureLinkSet(ctx, async () => {
+    await ctx.reply(helpText());
   });
 };
 
@@ -348,7 +365,6 @@ const handleUpdateUrl = async (url: string, ctx: ReadsContext, config: ReadsConf
  *
  * Bot Setup
  *
- *
  */
 export const readsBot = (config: ReadsConfig) => {
   const { botToken } = config;
@@ -359,8 +375,9 @@ export const readsBot = (config: ReadsConfig) => {
   bot.use(session({ defaultSession: createDefaultSession }));
 
   // commands
+  bot.command('help', handleHelp);
   bot.command('new', handleNew);
-  bot.command('post', handlePost);
+  bot.command('publish', handlePost);
   bot.command('preview', replyWithPreview);
   bot.command('setdescription', handleSetDescription);
   bot.command('settitle', handleSetTitle);
@@ -368,8 +385,9 @@ export const readsBot = (config: ReadsConfig) => {
   bot.command('setsector', handleSetTaxonomy);
 
   // actions
+  bot.action('help', handleHelp);
   bot.action('new', handleNew);
-  bot.action('post', handlePost);
+  bot.action('publish', handlePost);
   bot.action('setdescription', handleSetDescription);
   bot.action('settitle', handleSetTitle);
   bot.action('settype', handleSetTag);
