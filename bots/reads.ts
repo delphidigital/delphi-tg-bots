@@ -37,7 +37,6 @@ const defaultTagsForDomain: Record<string, ReadsTag[]> = {
 interface DelphiApi {
   apiKey: string;
   baseUrl: string;
-  postReadsEndpoint: string;
 }
 
 export interface ReadsConfig {
@@ -57,6 +56,7 @@ interface ReadsItem {
   image_url: string;
   taxonomy: SectorSlug[];
   tags: ReadsTag[];
+  tg_username: string;
 }
 
 interface ReadsSession {
@@ -81,6 +81,7 @@ const createNewItem = (): ReadsItem => ({
   image_url: '',
   taxonomy: [],
   tags: [],
+  tg_username: '',
 });
 
 const createDefaultSession = (): ReadsSession => ({
@@ -216,30 +217,6 @@ const displayMenu = async (ctx: ReadsContext) => {
   await ctx.reply('What would you like to do?', buttons);
 };
 
-const publish = async (ctx: ReadsContext, config: ReadsConfig) => {
-  const { delphiApi: { apiKey, postReadsEndpoint } } = config;
-  const postReadsUrl = delphiApiUrl(postReadsEndpoint, config);
-  const item = {
-    ...ctx.session.item,
-    tg: ctx.callbackQuery.from.username
-  };
-
-  const response = await fetch(postReadsUrl, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-reads-bot-api-key': apiKey
-    },
-    body: JSON.stringify(item)
-  });
-
-  const { ok } = await response.json();
-  
-  return ok
-    ? 'Item has been published, /new to publish another'
-    : 'Failed to publish item';
-};
-
 const displayOptionMenu = async (ctx: ReadsContext, options: Option<ReadsTag | SectorSlug>[], command: string, option: string) => {
   const buttonRows = [];
   for (let i = 0; i < options.length; i += 2) {
@@ -293,7 +270,32 @@ const handleNew = async (ctx: ReadsContext) => {
 
 const handlePost = async (ctx: ReadsContext, config: ReadsConfig) => {
   ensureLinkSet(ctx, async () => {
-    await ctx.reply(await publish(ctx, config));
+    const { delphiApi: { apiKey } } = config;
+    const postReadsUrl = delphiApiUrl('/api/v1/bots/tg/create-reads', config);
+    ctx.session.item.tg_username = ctx.callbackQuery.from.username;
+  
+    try {
+      const response = await fetch(postReadsUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': apiKey
+        },
+        body: JSON.stringify(ctx.session.item)
+      });
+  
+      const { ok } = await response.json();
+      
+      if (ok) {
+        await ctx.reply('Item has been published');
+        await handleNew(ctx);
+      } else {
+        await ctx.reply('Failed to publish item'); 
+      }
+    } catch (e) {
+      console.error('Error publishing read: ', e);
+      await ctx.reply('Failed to publish item');
+    }
   });
 };
 
