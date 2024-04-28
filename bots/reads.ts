@@ -212,15 +212,9 @@ const handleSetDescription = async (ctx: ReadsContext) => {
   });
 };
 
-const handleSetTaxonomy = async (ctx: ReadsContext, sectors: Option[]) => {
+const handleSetOption = async (ctx: ReadsContext, options: Option[], command: string, option: string) => {
   ensureLinkSet(ctx, async () => {
-    await displayOptionMenu(ctx, sectors, 'setsector', 'sector');
-  });
-};
-
-const handleSetTag = async (ctx: ReadsContext, types: Option[]) => {
-  ensureLinkSet(ctx, async () => {
-    await displayOptionMenu(ctx, types, 'settype', 'type');
+    await displayOptionMenu(ctx, options, command, option);
   });
 };
 
@@ -308,8 +302,8 @@ export const readsBot = (config: ReadsConfig) => {
   bot.command('preview', replyWithPreview);
   bot.command('setdescription', handleSetDescription);
   bot.command('settitle', handleSetTitle);
-  bot.command('settype', async (ctx) => { await handleSetTag(ctx, config.types) });
-  bot.command('setsector', async (ctx) => { await handleSetTaxonomy(ctx, config.sectors) });
+  bot.command('settype', async (ctx) => { await handleSetOption(ctx, config.types, 'settype', 'type') });
+  bot.command('setsector', async (ctx) => { await handleSetOption(ctx, config.sectors, 'setsector', 'sector') });
 
   // actions
   bot.action('new', handleNew);
@@ -317,8 +311,8 @@ export const readsBot = (config: ReadsConfig) => {
   bot.action('setdescription', handleSetDescription);
   bot.action('settitle', handleSetTitle);
 
-  bot.action('settype', async (ctx) => { await handleSetTag(ctx, config.types) });
-  bot.action('setsector', async (ctx) => { await handleSetTaxonomy(ctx, config.sectors) });
+  bot.action('settype', async (ctx) => { await handleSetOption(ctx, config.types, 'settype', 'type') });
+  bot.action('setsector', async (ctx) => { await handleSetOption(ctx, config.sectors, 'setsector', 'sector') });
 
   // dynamic actions
   bot.action(/setsector_(.+)/, async (ctx) => {
