@@ -5,6 +5,27 @@ import Markup from 'telegraf/markup';
 
 type ReadsState = 'await_description' | 'await_title' | 'await_url' | 'build' | 'none';
 
+type ReadsTag = 'reads' | 'tweets' | 'media' | 'news' | 'podcast' | 'other';
+
+type SectorSlug = 'general' | 'finance' | 'infrastructure' | 'macro-markets' | 'metaverse';
+
+const types: Option<ReadsTag>[] = [
+  { slug: 'reads', title: 'Reads' },
+  { slug: 'media', title: 'Media' },
+  { slug: 'tweets', title: 'Tweets' },
+  { slug: 'news', title: 'News' },
+  { slug: 'podcast', title: 'Podcast' },
+  { slug: 'other', title: 'Other' },
+];
+
+const sectors: Option<SectorSlug>[] = [
+  { slug: 'general', title: 'General' },
+  { slug: 'finance', title: 'DeFi' },
+  { slug: 'infrastructure', title: 'Infrastructure' },
+  { slug: 'macro-markets', title: 'Macro & Markets' },
+  { slug: 'metaverse', title: 'NFTs & Gaming' },
+];
+
 interface DelphiApi {
   baseUrl: string;
 }
@@ -12,12 +33,10 @@ interface DelphiApi {
 export interface ReadsConfig {
   delphiApi: DelphiApi;
   botToken: string;
-  sectors: Option[];
-  types: Option[];
 }
 
-export interface Option {
-  slug: string;
+export interface Option<T> {
+  slug: T;
   title: string;
 }
 
@@ -26,8 +45,8 @@ interface ReadsItem {
   link: string;
   description: string;
   image_url: string;
-  taxonomy: string[];
-  tags: string[];
+  taxonomy: SectorSlug[];
+  tags: ReadsTag[];
 }
 
 interface ReadsSession {
@@ -74,15 +93,19 @@ ${item.title}
 Description: 
 ${item.description}
 
-Sector: ${item.taxonomy[0] || ''}
-Type: ${item.tags[0] || ''}
+Sector: ${getOptionLabel(sectors, item.taxonomy[0]) || ''}
+Type: ${getOptionLabel(types, item.tags[0]) || ''}
 
 Image: ${item.image_url}
 `;
 };
 
-const getOptionLabel = (options: Option[], option: string) => {
-  return options.find(({ slug }) => slug === option).title;
+const getOptionLabel = (options: Option<ReadsTag | SectorSlug>[], option: string) => {
+  const found = options.find(({ slug }) => slug === option);
+
+  if (found) {
+    return found.title;
+  }
 }
 
 const normalizeUrl = (url: string) => {
@@ -162,9 +185,9 @@ const displayMenu = async (ctx: ReadsContext) => {
   await ctx.reply('What would you like to do?', buttons);
 };
 
-const displayOptionMenu = async (ctx: ReadsContext, options: Option[], command: string, option: string) => {
+const displayOptionMenu = async (ctx: ReadsContext, options: Option<ReadsTag | SectorSlug>[], command: string, option: string) => {
   const buttonRows = [];
-  for (let i = 0; i < options.length; i+= 2) {
+  for (let i = 0; i < options.length; i += 2) {
     const chunk = options.slice(i, i + 2);
     const optionRowButtons = chunk.map(({ slug, title }) => Markup.button.callback(title, `${command}_${slug}`));
     buttonRows.push(optionRowButtons);
@@ -173,14 +196,32 @@ const displayOptionMenu = async (ctx: ReadsContext, options: Option[], command: 
   await ctx.reply(`Select a ${option}: `, buttons);
 };
 
-const returnToBuildStateAndRenderPreview = async (ctx: ReadsContext) => {
+const nextBuildState = async (ctx: ReadsContext) => {
   ctx.session.state = 'build';
-  await replyWithPreview(ctx);
+  await nextState(ctx);
 };
 
 const resetState = (ctx: ReadsContext) => {
   ctx.session.state = 'none';
   ctx.session.item = createNewItem();
+};
+
+const nextState = async (ctx: ReadsContext) => {
+  if (ctx.session.state === 'build') {
+    if (!ctx.session.item.title) {
+      return await handleSetTitle(ctx);
+    }
+
+    if (ctx.session.item.taxonomy.length < 1) {
+      return await handleSetTaxonomy(ctx);
+    }
+
+    if (ctx.session.item.tags.length < 1) {
+      return await handleSetTag(ctx);
+    }
+
+    return replyWithPreview(ctx);
+  }
 };
 
 /*
@@ -204,15 +245,19 @@ const handlePost = async (ctx: ReadsContext) => {
 const handleSetDescription = async (ctx: ReadsContext) => {
   ensureLinkSet(ctx, async () => {
     ctx.session.state = 'await_description';
-    await ctx.reply('what description do you want?');
+    await ctx.reply('what description do you want? type "none" for no description');
   });
 };
 
-const handleSetOption = async (ctx: ReadsContext, options: Option[], command: string, option: string) => {
+const handleSetOption = async (ctx: ReadsContext, options: Option<ReadsTag | SectorSlug>[], command: string, option: string) => {
   ensureLinkSet(ctx, async () => {
     await displayOptionMenu(ctx, options, command, option);
   });
 };
+
+const handleSetTaxonomy = async (ctx: ReadsContext) => await handleSetOption(ctx, sectors, 'setsector', 'sector');
+
+const handleSetTag = async (ctx: ReadsContext) => await handleSetOption(ctx, types, 'settype', 'type');
 
 const handleSetTitle = async (ctx: ReadsContext) => {
   ensureLinkSet(ctx, async () => {
@@ -234,13 +279,13 @@ const handleUpdateDescription = async (description: string, ctx: ReadsContext) =
     return;
   }
 
-  ctx.session.item.description = description;
-  await returnToBuildStateAndRenderPreview(ctx);
+  ctx.session.item.description = description === 'none' ? '' : description;
+  await nextBuildState(ctx);
 };
 
 const handleUpdateTitle = async (title: string, ctx: ReadsContext) => {
   ctx.session.item.title = title;
-  await returnToBuildStateAndRenderPreview(ctx);
+  await nextBuildState(ctx);
 };
 
 const handleUpdateUrl = async (url: string, ctx: ReadsContext, config: ReadsConfig) => {
@@ -263,9 +308,15 @@ const handleUpdateUrl = async (url: string, ctx: ReadsContext, config: ReadsConf
 
   const { description, image, title } = metadata;
 
-  if (!cleanUrl.includes('x.com')) {
+  if (cleanUrl.includes('x.com')) {
+    ctx.session.item.tags = ['tweets'];
+  } else {
     // not twitter, so save the title
     ctx.session.item.title = title || '';
+  }
+
+  if (cleanUrl.includes('youtube.com')) {
+    ctx.session.item.tags = ['media'];
   }
 
   ctx.session.item.description
@@ -276,7 +327,7 @@ const handleUpdateUrl = async (url: string, ctx: ReadsContext, config: ReadsConf
   ctx.session.item.image_url = image || '';
   ctx.session.state = 'build';
 
-  await replyWithPreview(ctx);
+  await nextState(ctx);
 };
 
 /*
@@ -286,7 +337,7 @@ const handleUpdateUrl = async (url: string, ctx: ReadsContext, config: ReadsConf
  *
  */
 export const readsBot = (config: ReadsConfig) => {
-  const { botToken, sectors } = config;
+  const { botToken } = config;
 
   const bot = new Telegraf<ReadsContext>(botToken);
 
@@ -299,26 +350,27 @@ export const readsBot = (config: ReadsConfig) => {
   bot.command('preview', replyWithPreview);
   bot.command('setdescription', handleSetDescription);
   bot.command('settitle', handleSetTitle);
-  bot.command('settype', async (ctx) => { await handleSetOption(ctx, config.types, 'settype', 'type') });
-  bot.command('setsector', async (ctx) => { await handleSetOption(ctx, config.sectors, 'setsector', 'sector') });
+  bot.command('settype', handleSetTag);
+  bot.command('setsector', handleSetTaxonomy);
 
   // actions
   bot.action('new', handleNew);
   bot.action('post', handlePost);
   bot.action('setdescription', handleSetDescription);
   bot.action('settitle', handleSetTitle);
-  bot.action('settype', async (ctx) => { await handleSetOption(ctx, config.types, 'settype', 'type') });
-  bot.action('setsector', async (ctx) => { await handleSetOption(ctx, config.sectors, 'setsector', 'sector') });
+  bot.action('settype', handleSetTag);
+  bot.action('setsector', handleSetTaxonomy);
 
   // dynamic actions
   bot.action(/setsector_(.+)/, async (ctx) => {
-    ctx.session.item.taxonomy = [getOptionLabel(config.sectors, ctx.match[1])];
-    await replyWithPreview(ctx);
-  })
+    ctx.session.item.taxonomy = [ctx.match[1] as SectorSlug];
+    await nextState(ctx);
+  });
+
   bot.action(/settype_(.+)/, async (ctx) => {
-    ctx.session.item.tags = [getOptionLabel(config.types, ctx.match[1])];
-    await replyWithPreview(ctx);
-  })
+    ctx.session.item.tags = [ctx.match[1] as ReadsTag];
+    await nextState(ctx);
+  });
 
   bot.hears('state', async (ctx) => {
     await ctx.reply(`\`\`\`\n${JSON.stringify(ctx.session, null, 2)}\n\`\`\``, { parse_mode: 'Markdown' });

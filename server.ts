@@ -20,30 +20,11 @@ if (!DELPHI_API_BASE_URL) throw new Error('"DELPHI_API_BASE_URL" env var is requ
 if (!DELPHI_READS_BOT_TOKEN) throw new Error('"DELPHI_READS_BOT_TOKEN" env var is required!');
 if (!DELPHI_READS_WEBHOOK_URL) throw new Error('"DELPHI_READS_WEBHOOK_URL" env var is required!');
 
-const types: Option[] = [
-  { slug: 'reads', title: 'Reads' },
-  { slug: 'media', title: 'Media' },
-  { slug: 'tweets', title: 'Tweets' },
-  { slug: 'news', title: 'News' },
-  { slug: 'podcast', title: 'Podcast' },
-  { slug: 'other', title: 'Other' },
-];
-
-const sectors: Option[] = [
-  { slug: 'general', title: 'General' },
-  { slug: 'finance', title: 'DeFi' },
-  { slug: 'infrastructure', title: 'Infrastructure' },
-  { slug: 'macro-markets', title: 'Macro & Markets' },
-  { slug: 'metaverse', title: 'NFTs & Gaming' },
-];
-
 const readsBotConfiguration: ReadsConfig = {
   botToken: DELPHI_READS_BOT_TOKEN,
   delphiApi: {
     baseUrl: DELPHI_API_BASE_URL,
   },
-  sectors,
-  types,
 };
 
 const bot = readsBot(readsBotConfiguration);
