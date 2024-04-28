@@ -1,7 +1,8 @@
 import dotenv from 'dotenv';
 import crypto from 'crypto';
 import express from 'express';
-import { ReadsConfig, readsBot, Sector } from './bots/reads.js';
+
+import { ReadsConfig, readsBot, Option } from './bots/reads.js';
 import audit from 'express-requests-logger';
 import SmeeClient from 'smee-client';
 
@@ -19,7 +20,16 @@ if (!DELPHI_API_BASE_URL) throw new Error('"DELPHI_API_BASE_URL" env var is requ
 if (!DELPHI_READS_BOT_TOKEN) throw new Error('"DELPHI_READS_BOT_TOKEN" env var is required!');
 if (!DELPHI_READS_WEBHOOK_URL) throw new Error('"DELPHI_READS_WEBHOOK_URL" env var is required!');
 
-const sectors: Sector[] = [
+const types: Option[] = [
+  { slug: 'reads', title: 'Reads' },
+  { slug: 'media', title: 'Media' },
+  { slug: 'tweets', title: 'Tweets' },
+  { slug: 'news', title: 'News' },
+  { slug: 'podcast', title: 'Podcast' },
+  { slug: 'other', title: 'Other' },
+];
+
+const sectors: Option[] = [
   { slug: 'general', title: 'General' },
   { slug: 'finance', title: 'DeFi' },
   { slug: 'infrastructure', title: 'Infrastructure' },
@@ -33,6 +43,7 @@ const readsBotConfiguration: ReadsConfig = {
     baseUrl: DELPHI_API_BASE_URL,
   },
   sectors,
+  types,
 };
 
 const bot = readsBot(readsBotConfiguration);
