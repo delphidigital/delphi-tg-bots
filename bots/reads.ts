@@ -85,8 +85,8 @@ Image: ${item.image_url}
 `;
 };
 
-const getOptionLabel = (options: Option[], key: string) => {
-  return options.find(({ slug }) => slug === key).title;
+const getOptionLabel = (options: Option[], option: string) => {
+  return options.find(({ slug }) => slug === option).title;
 }
 
 const normalizeUrl = (url: string) => {
