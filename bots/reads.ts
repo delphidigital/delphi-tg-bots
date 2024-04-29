@@ -56,7 +56,6 @@ interface ReadsItem {
   image_url: string;
   taxonomy: SectorSlug[];
   tags: ReadsTag[];
-  tg_username: string;
 }
 
 interface ReadsSession {
@@ -81,7 +80,6 @@ const createNewItem = (): ReadsItem => ({
   image_url: '',
   taxonomy: [],
   tags: [],
-  tg_username: '',
 });
 
 const createDefaultSession = (): ReadsSession => ({
@@ -272,7 +270,7 @@ const handlePost = async (ctx: ReadsContext, config: ReadsConfig) => {
   ensureLinkSet(ctx, async () => {
     const { delphiApi: { apiKey } } = config;
     const postReadsUrl = delphiApiUrl('/api/v1/bots/tg/create-reads', config);
-    ctx.session.item.tg_username = ctx.callbackQuery.from.username;
+    const tg_username = ctx.callbackQuery.from.username;
   
     try {
       const response = await fetch(postReadsUrl, {
@@ -281,14 +279,13 @@ const handlePost = async (ctx: ReadsContext, config: ReadsConfig) => {
           'Content-Type': 'application/json',
           'x-api-key': apiKey
         },
-        body: JSON.stringify(ctx.session.item)
+        body: JSON.stringify({ ...ctx.session.item, tg_username })
       });
   
       const { ok } = await response.json();
       
       if (ok) {
-        await ctx.reply('Item has been published');
-        await handleNew(ctx);
+        await ctx.reply('Item has been published. Paste another URL to start over.');
       } else {
         await ctx.reply('Failed to publish item'); 
       }
