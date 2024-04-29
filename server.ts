@@ -2,7 +2,8 @@ import dotenv from 'dotenv';
 import crypto from 'crypto';
 import express from 'express';
 
-import { ReadsConfig, readsBot, Option } from './bots/reads.js';
+import { ReadsConfig, readsBot } from './bots/reads.js';
+import { mask } from './utils/index.js';
 import audit from 'express-requests-logger';
 import SmeeClient from 'smee-client';
 
@@ -10,12 +11,14 @@ dotenv.config({ debug: true });
 
 const {
   DELPHI_API_BASE_URL,
+  DELPHI_READS_API_KEY,
   DELPHI_READS_BOT_TOKEN,
   DELPHI_READS_WEBHOOK_URL,
   DEV,
   PORT,
 } = process.env;
 
+if (!DELPHI_READS_API_KEY) throw new Error('"DELPHI_READS_API_KEY" env var is required!');
 if (!DELPHI_API_BASE_URL) throw new Error('"DELPHI_API_BASE_URL" env var is required!');
 if (!DELPHI_READS_BOT_TOKEN) throw new Error('"DELPHI_READS_BOT_TOKEN" env var is required!');
 if (!DELPHI_READS_WEBHOOK_URL) throw new Error('"DELPHI_READS_WEBHOOK_URL" env var is required!');
@@ -23,6 +26,7 @@ if (!DELPHI_READS_WEBHOOK_URL) throw new Error('"DELPHI_READS_WEBHOOK_URL" env v
 const readsBotConfiguration: ReadsConfig = {
   botToken: DELPHI_READS_BOT_TOKEN,
   delphiApi: {
+    apiKey: DELPHI_READS_API_KEY,
     baseUrl: DELPHI_API_BASE_URL,
   },
 };
@@ -32,7 +36,8 @@ const bot = readsBot(readsBotConfiguration);
 console.log('Configuration:', {
   DELPHI_API_BASE_URL,
   DELPHI_READS_WEBHOOK_URL,
-  DELPHI_READS_BOT_TOKEN: DELPHI_READS_BOT_TOKEN.replaceAll(/./g, '*'),
+  DELPHI_READS_BOT_TOKEN: mask(DELPHI_READS_BOT_TOKEN),
+  DELPHI_READS_API_KEY: mask(DELPHI_READS_API_KEY),
 });
 
 const readsWebhookPath = '/webhooks/reads';

@@ -35,6 +35,7 @@ const defaultTagsForDomain: Record<string, ReadsTag[]> = {
 } as const;
 
 interface DelphiApi {
+  apiKey: string;
   baseUrl: string;
 }
 
@@ -265,9 +266,33 @@ const handleNew = async (ctx: ReadsContext) => {
   await ctx.reply('what url do you want post?');
 };
 
-const handlePost = async (ctx: ReadsContext) => {
+const handlePost = async (ctx: ReadsContext, config: ReadsConfig) => {
   ensureLinkSet(ctx, async () => {
-    await ctx.reply('TODO: implement me');
+    const { delphiApi: { apiKey } } = config;
+    const postReadsUrl = delphiApiUrl('/api/v1/bots/tg/create-reads', config);
+    const tg_username = ctx.callbackQuery.from.username;
+  
+    try {
+      const response = await fetch(postReadsUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': apiKey
+        },
+        body: JSON.stringify({ ...ctx.session.item, tg_username })
+      });
+  
+      const { ok } = await response.json();
+      
+      if (ok) {
+        await ctx.reply('Item has been published. Paste another URL to start over.');
+      } else {
+        await ctx.reply('Failed to publish item'); 
+      }
+    } catch (e) {
+      console.error('Error publishing read: ', e);
+      await ctx.reply('Failed to publish item');
+    }
   });
 };
 
@@ -374,10 +399,12 @@ export const readsBot = (config: ReadsConfig) => {
   // setup session
   bot.use(session({ defaultSession: createDefaultSession }));
 
+  const handlePublish = (ctx) => handlePost(ctx, config);
+
   // commands
   bot.command('help', handleHelp);
   bot.command('new', handleNew);
-  bot.command('publish', handlePost);
+  bot.command('publish', handlePublish);
   bot.command('preview', replyWithPreview);
   bot.command('setdescription', handleSetDescription);
   bot.command('settitle', handleSetTitle);
@@ -387,7 +414,7 @@ export const readsBot = (config: ReadsConfig) => {
   // actions
   bot.action('help', handleHelp);
   bot.action('new', handleNew);
-  bot.action('publish', handlePost);
+  bot.action('publish', handlePublish);
   bot.action('setdescription', handleSetDescription);
   bot.action('settitle', handleSetTitle);
   bot.action('settype', handleSetTag);
