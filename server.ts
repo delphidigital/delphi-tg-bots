@@ -41,11 +41,14 @@ console.log('Configuration:', {
 });
 
 const readsWebhookPath = '/webhooks/reads';
+let botWebhookUrl = `${DELPHI_READS_WEBHOOK_URL}${readsWebhookPath}`;
 
 const app = express();
 const port = PORT || 5555;
 
 if (DEV) {
+  botWebhookUrl = DELPHI_READS_WEBHOOK_URL;
+
   // setup webhook proxy to local server
   const smee = new SmeeClient({
     source: DELPHI_READS_WEBHOOK_URL,
@@ -66,7 +69,7 @@ app.use(audit({
 // use this instead of createWebhook() so we can easily proxy thru smee locally
 const secretToken = crypto.randomBytes(64).toString("hex");
 app.use(bot.webhookCallback(readsWebhookPath, { secretToken }));
-await bot.telegram.setWebhook(DELPHI_READS_WEBHOOK_URL, { secret_token: secretToken });
+await bot.telegram.setWebhook(botWebhookUrl, { secret_token: secretToken });
 
 // configure dev-only endpoints
 if (DEV) {

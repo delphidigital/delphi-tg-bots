@@ -2,14 +2,6 @@
 
 Delphi Reads Telegram Bot powers creation of Delphi Reads items by Delphi research analysts
 
-## Production
-
-Run the app
-
-```bash
-npm start
-```
-
 ## Local Development
 
 Install deps
@@ -63,6 +55,17 @@ setdescription - Set the description for your current Delphi Read item
 settitle - Set the title for your current Delphi Read item
 settype - Set the type for your current Delphi Read item
 setsector - Set the sector for your current Delphi Read item
+```
+
+## Deployment
+
+
+```
+# deploy to beta/staging environment
+npm run deploy
+
+# deploy to prod
+npm run deploy:prod
 ```
 
 ## Resources
