@@ -171,7 +171,6 @@ const delphiApiUrl = (path: string, config: ReadsConfig) => {
 };
 
 export async function readLinkRecentlyAdded (link: string, config: ReadsConfig) {
-  try {
     const readsUrl = delphiApiUrl(`/api/v1/lists/${config.delphiApi.readingListId}/items?page=1&limit=50`, config);
     const response = await fetch(readsUrl, {
       method: 'GET',
@@ -181,13 +180,9 @@ export async function readLinkRecentlyAdded (link: string, config: ReadsConfig) 
     });
     const json = await response.json();
     const matches = json.data.filter(read => read.link === link);
-    if (matches?.length) {
+    if (matches.length) {
       throw new Error(ERROR_DUPLICATE_READ);
     }
-  } catch (e) {
-    console.error('Error determining if link was recently added: ', e);
-    throw new Error(e.message || ERROR_UNKNOWN);
-  }
 }
 
 const fetchUrlMetadata = async (url: string, config: ReadsConfig): Promise<UrlMetadata> => {
@@ -347,7 +342,7 @@ const handlePost = async (ctx: ReadsContext, config: ReadsConfig) => {
           break;
         case ERROR_DUPLICATE_READ:
           await ctx.reply('Oops, this item was already added recently.');
-          resetState(ctx);
+          await handleNew(ctx);
           break;
         default:
           await ctx.reply('Oops, something went wrong - try to /publish again or start over with /new');
