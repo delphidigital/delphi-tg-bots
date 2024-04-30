@@ -304,27 +304,22 @@ const postRead = async (ctx: ReadsContext, config: ReadsConfig) => {
     const postReadsUrl = delphiApiUrl('/api/v1/bots/tg/create-read', config);
     const tg_username = ctx.callbackQuery.from.username;
 
-    try {
-      await ctx.reply('Attempting to publish...');
-      const response = await fetch(postReadsUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': apiKey
-        },
-        body: JSON.stringify({ ...ctx.session.item, tg_username })
-      });
-  
-      if (response.status === 403) {
-        throw new Error(ERROR_UNAUTHORIZED);
-      } else if (response.status === 409) {
-        throw new Error(ERROR_DUPLICATE_READ);
-      } else if (response.status > 201) {
-        throw new Error(ERROR_UNKNOWN);
-      }
-    } catch (e) {
-      console.error('Error posting read: ', e);
-      throw new Error(e.message || ERROR_UNKNOWN);
+    await ctx.reply('Attempting to publish...');
+    const response = await fetch(postReadsUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey
+      },
+      body: JSON.stringify({ ...ctx.session.item, tg_username })
+    });
+
+    if (response.status === 403) {
+      throw new Error(ERROR_UNAUTHORIZED);
+    } else if (response.status === 409) {
+      throw new Error(ERROR_DUPLICATE_READ);
+    } else if (response.status > 201) {
+      throw new Error(ERROR_UNKNOWN);
     }
 };
 
