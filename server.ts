@@ -14,10 +14,12 @@ const {
   DELPHI_READS_API_KEY,
   DELPHI_READS_BOT_TOKEN,
   DELPHI_READS_WEBHOOK_URL,
+  DELPHI_READS_READING_LIST_ID,
   DEV,
   PORT,
 } = process.env;
 
+if (!DELPHI_READS_READING_LIST_ID) throw new Error('"DELPHI_READS_READING_LIST_ID" env var is required!');
 if (!DELPHI_READS_API_KEY) throw new Error('"DELPHI_READS_API_KEY" env var is required!');
 if (!DELPHI_API_BASE_URL) throw new Error('"DELPHI_API_BASE_URL" env var is required!');
 if (!DELPHI_READS_BOT_TOKEN) throw new Error('"DELPHI_READS_BOT_TOKEN" env var is required!');
@@ -28,6 +30,7 @@ const readsBotConfiguration: ReadsConfig = {
   delphiApi: {
     apiKey: DELPHI_READS_API_KEY,
     baseUrl: DELPHI_API_BASE_URL,
+    readingListId: DELPHI_READS_READING_LIST_ID,
   },
 };
 

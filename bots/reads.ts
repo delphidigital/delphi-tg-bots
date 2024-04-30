@@ -11,6 +11,7 @@ type SectorSlug = 'general' | 'finance' | 'infrastructure' | 'macro-markets' | '
 
 const ERROR_UNAUTHORIZED = 'ERROR_UNAUTHORIZED';
 const ERROR_UNKNOWN = 'ERROR_UNKNOWN';
+const ERROR_DUPLICATE_READ = 'ERROR_DUPLICATE_READ';
 
 const types: Option<ReadsTag>[] = [
   { slug: 'reads', title: 'Reads' },
@@ -40,6 +41,7 @@ const defaultTagsForDomain: Record<string, ReadsTag[]> = {
 interface DelphiApi {
   apiKey: string;
   baseUrl: string;
+  readingListId: string;
 }
 
 export interface ReadsConfig {
@@ -168,6 +170,21 @@ const delphiApiUrl = (path: string, config: ReadsConfig) => {
   return `${config.delphiApi.baseUrl}${path}`
 };
 
+export async function ensureNonDuplicateLink (link: string, config: ReadsConfig) {
+    const readsUrl = delphiApiUrl(`/api/v1/lists/${config.delphiApi.readingListId}/items?page=1&limit=50`, config);
+    const response = await fetch(readsUrl, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    });
+    const json = await response.json();
+    const matches = json.data.filter(read => read.link === link);
+    if (matches.length) {
+      throw new Error(ERROR_DUPLICATE_READ);
+    }
+}
+
 const fetchUrlMetadata = async (url: string, config: ReadsConfig): Promise<UrlMetadata> => {
   const metadataUrl = delphiApiUrl(`/api/v1/reads/link-metadata?url=${url}`, config);
   console.log(`fetching metadata for ${url} from ${metadataUrl}`);
@@ -287,24 +304,21 @@ const postRead = async (ctx: ReadsContext, config: ReadsConfig) => {
     const postReadsUrl = delphiApiUrl('/api/v1/bots/tg/create-read', config);
     const tg_username = ctx.callbackQuery.from.username;
 
-    try {
-      await ctx.reply('Attempting to publish...');
-      const response = await fetch(postReadsUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': apiKey
-        },
-        body: JSON.stringify({ ...ctx.session.item, tg_username })
-      });
-  
-      if (response.status === 403) {
-        throw new Error(ERROR_UNAUTHORIZED);
-      } else if (response.status > 201) {
-        throw new Error(ERROR_UNKNOWN);
-      }
-    } catch (e) {
-      console.error('Error posting read: ', e);
+    await ctx.reply('Attempting to publish...');
+    const response = await fetch(postReadsUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey
+      },
+      body: JSON.stringify({ ...ctx.session.item, tg_username })
+    });
+
+    if (response.status === 403) {
+      throw new Error(ERROR_UNAUTHORIZED);
+    } else if (response.status === 409) {
+      throw new Error(ERROR_DUPLICATE_READ);
+    } else if (response.status > 201) {
       throw new Error(ERROR_UNKNOWN);
     }
 };
@@ -320,6 +334,10 @@ const handlePost = async (ctx: ReadsContext, config: ReadsConfig) => {
       switch (e.message) {
         case ERROR_UNAUTHORIZED:
           await ctx.reply('Unauthorized: reach out to engineering for assistance.');
+          break;
+        case ERROR_DUPLICATE_READ:
+          await ctx.reply('Oops, this item was already added recently.');
+          await resetState(ctx);
           break;
         default:
           await ctx.reply('Oops, something went wrong - try to /publish again or start over with /new');
@@ -392,7 +410,15 @@ const handleUpdateUrl = async (url: string, ctx: ReadsContext, config: ReadsConf
 
   try {
     metadata = await fetchUrlMetadata(cleanUrl, config);
+    await ensureNonDuplicateLink(cleanUrl, config);
   } catch (e) {
+    console.error('Error proccessing handleUpdateUrl: ', e);
+    if (e.message === ERROR_DUPLICATE_READ) {
+      await ctx.reply('Oops, this url was recently added already');
+      resetState(ctx);
+      return;
+    }
+
     await ctx.reply('sorry, I could not fetch that url');
     await handleNew(ctx);
     return;
