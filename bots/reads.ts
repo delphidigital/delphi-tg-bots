@@ -342,7 +342,7 @@ const handlePost = async (ctx: ReadsContext, config: ReadsConfig) => {
           break;
         case ERROR_DUPLICATE_READ:
           await ctx.reply('Oops, this item was already added recently.');
-          await handleNew(ctx);
+          await resetState(ctx);
           break;
         default:
           await ctx.reply('Oops, something went wrong - try to /publish again or start over with /new');
@@ -419,7 +419,7 @@ const handleUpdateUrl = async (url: string, ctx: ReadsContext, config: ReadsConf
   } catch (e) {
     if (e.message === ERROR_DUPLICATE_READ) {
       await ctx.reply('Oops, this url was recently added already');
-      await handleNew(ctx);
+      await resetState(ctx);
       return;
     }
 
