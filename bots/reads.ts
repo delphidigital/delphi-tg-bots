@@ -417,9 +417,10 @@ const handleUpdateUrl = async (url: string, ctx: ReadsContext, config: ReadsConf
     metadata = await fetchUrlMetadata(cleanUrl, config);
     await readLinkRecentlyAdded(cleanUrl, config);
   } catch (e) {
+    console.error('Error proccessing handleUpdateUrl: ', e);
     if (e.message === ERROR_DUPLICATE_READ) {
       await ctx.reply('Oops, this url was recently added already');
-      await resetState(ctx);
+      resetState(ctx);
       return;
     }
 
