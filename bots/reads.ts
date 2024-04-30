@@ -96,6 +96,21 @@ const createDefaultSession = (): ReadsSession => ({
  *
  */
 
+export const cleanTextForMarkdown = (str: string) =>
+  str
+    .replace(/([-_*[,\]()~`>#+=|{}.!])/g, '\\$1')
+    .replace(/\n/g, ' ')
+    .replace(/\s+/g, ' ')
+    .replace(/@/g, '＠');
+
+export const getCleanItem = (item: ReadsItem) => {
+  return ['title', 'description', 'image_url'].reduce(
+    function (acc, key) {
+      return Object.assign(acc, {[key]: cleanTextForMarkdown(item[key])})
+  }, item
+  );
+}
+
 const helpText = () => {
   return `
 For questions or feedback, please post in the Delphi Engineering telegram channel:
@@ -105,18 +120,17 @@ For questions or feedback, please post in the Delphi Engineering telegram channe
 };
 
 const previewText = ({ item }: ReadsSession): string => {
+  const cleanItem = getCleanItem(item);
+
   return `here is what we've got so far:
-
-Title: 
-${item.title}
-
-Description: 
-${item.description}
-
-Sector: ${getOptionLabel(sectors, item.taxonomy[0]) || ''}
-Type: ${getOptionLabel(types, item.tags[0]) || ''}
-
-Image: ${item.image_url}
+\n__*Title*__
+${cleanItem.title}
+\n__*Description*__
+${cleanItem.description}
+\n__*Sector*__
+${getOptionLabel(sectors, item.taxonomy[0]) || ''}
+\n__*Type*__
+${getOptionLabel(types, item.tags[0]) || ''}
 `;
 };
 
@@ -192,8 +206,7 @@ const defaultTagsForUrl = (url: string): ReadsTag[] => {
  */
 
 const replyWithPreview = async (ctx: ReadsContext) => {
-  // await ctx.reply(previewText(ctx.session), { parse_mode: 'Markdown' });
-  await ctx.reply(previewText(ctx.session));
+  await ctx.reply(previewText(ctx.session), { parse_mode: 'MarkdownV2' });
   await displayMenu(ctx);
 };
 
@@ -275,7 +288,6 @@ const postRead = async (ctx: ReadsContext, config: ReadsConfig) => {
     const tg_username = ctx.callbackQuery.from.username;
 
     try {
-      // console.log("====== item to publish: ", {...ctx.session.item, tg_username});
       await ctx.reply('Attempting to publish...');
       const response = await fetch(postReadsUrl, {
         method: 'POST',
