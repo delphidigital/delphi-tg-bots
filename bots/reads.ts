@@ -170,7 +170,7 @@ const delphiApiUrl = (path: string, config: ReadsConfig) => {
   return `${config.delphiApi.baseUrl}${path}`
 };
 
-export async function readLinkRecentlyAdded (link: string, config: ReadsConfig) {
+export async function ensureNonDuplicateLink (link: string, config: ReadsConfig) {
     const readsUrl = delphiApiUrl(`/api/v1/lists/${config.delphiApi.readingListId}/items?page=1&limit=50`, config);
     const response = await fetch(readsUrl, {
       method: 'GET',
@@ -410,7 +410,7 @@ const handleUpdateUrl = async (url: string, ctx: ReadsContext, config: ReadsConf
 
   try {
     metadata = await fetchUrlMetadata(cleanUrl, config);
-    await readLinkRecentlyAdded(cleanUrl, config);
+    await ensureNonDuplicateLink(cleanUrl, config);
   } catch (e) {
     console.error('Error proccessing handleUpdateUrl: ', e);
     if (e.message === ERROR_DUPLICATE_READ) {
