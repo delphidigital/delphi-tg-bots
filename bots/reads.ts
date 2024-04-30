@@ -11,6 +11,7 @@ type SectorSlug = 'general' | 'finance' | 'infrastructure' | 'macro-markets' | '
 
 const ERROR_UNAUTHORIZED = 'ERROR_UNAUTHORIZED';
 const ERROR_UNKNOWN = 'ERROR_UNKNOWN';
+const ERROR_DUPLICATE_READ = 'ERROR_DUPLICATE_READ';
 
 const types: Option<ReadsTag>[] = [
   { slug: 'reads', title: 'Reads' },
@@ -45,6 +46,7 @@ interface DelphiApi {
 export interface ReadsConfig {
   delphiApi: DelphiApi;
   botToken: string;
+  readingListId: string;
 }
 
 export interface Option<T> {
@@ -167,6 +169,25 @@ const normalizeUrl = (url: string) => {
 const delphiApiUrl = (path: string, config: ReadsConfig) => {
   return `${config.delphiApi.baseUrl}${path}`
 };
+
+export async function readLinkRecentlyAdded (link: string, config: ReadsConfig) {
+  try {
+    const readsUrl = delphiApiUrl(`/api/v1/lists/${config.readingListId}/items?page=1&limit=50`, config);
+    const response = await fetch(readsUrl, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    });
+    const json = await response.json();
+    const matches = json.data.filter(read => read.link === link);
+    if (matches?.length) {
+      throw new Error(ERROR_DUPLICATE_READ);
+    }
+  } catch (e) {
+    throw new Error(ERROR_DUPLICATE_READ);
+  }
+}
 
 const fetchUrlMetadata = async (url: string, config: ReadsConfig): Promise<UrlMetadata> => {
   const metadataUrl = delphiApiUrl(`/api/v1/reads/link-metadata?url=${url}`, config);
@@ -300,12 +321,14 @@ const postRead = async (ctx: ReadsContext, config: ReadsConfig) => {
   
       if (response.status === 403) {
         throw new Error(ERROR_UNAUTHORIZED);
+      } else if (response.status === 409) {
+        throw new Error(ERROR_DUPLICATE_READ);
       } else if (response.status > 201) {
         throw new Error(ERROR_UNKNOWN);
       }
     } catch (e) {
       console.error('Error posting read: ', e);
-      throw new Error(ERROR_UNKNOWN);
+      throw new Error(e.message || ERROR_UNKNOWN);
     }
 };
 
@@ -320,6 +343,10 @@ const handlePost = async (ctx: ReadsContext, config: ReadsConfig) => {
       switch (e.message) {
         case ERROR_UNAUTHORIZED:
           await ctx.reply('Unauthorized: reach out to engineering for assistance.');
+          break;
+        case ERROR_DUPLICATE_READ:
+          await ctx.reply('Oops, this item was already added recently.');
+          resetState(ctx);
           break;
         default:
           await ctx.reply('Oops, something went wrong - try to /publish again or start over with /new');
@@ -392,7 +419,14 @@ const handleUpdateUrl = async (url: string, ctx: ReadsContext, config: ReadsConf
 
   try {
     metadata = await fetchUrlMetadata(cleanUrl, config);
+    await readLinkRecentlyAdded(cleanUrl, config);
   } catch (e) {
+    if (e.message === ERROR_DUPLICATE_READ) {
+      await ctx.reply('Oops, this url was recently added already');
+      await handleNew(ctx);
+      return;
+    }
+
     await ctx.reply('sorry, I could not fetch that url');
     await handleNew(ctx);
     return;
