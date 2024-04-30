@@ -9,6 +9,8 @@
     "start:dev": "DEV=1 npm start",
     "deploy": "fly deploy",
     "deploy:prod": "fly deploy -a delphi-tg-bots-prod -c fly.prod.toml",
+    "logs": "fly logs",
+    "logs:prod": "fly logs -a delphi-tg-bots-prod",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {
