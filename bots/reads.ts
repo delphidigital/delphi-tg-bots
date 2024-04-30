@@ -41,12 +41,12 @@ const defaultTagsForDomain: Record<string, ReadsTag[]> = {
 interface DelphiApi {
   apiKey: string;
   baseUrl: string;
+  readingListId: string;
 }
 
 export interface ReadsConfig {
   delphiApi: DelphiApi;
   botToken: string;
-  readingListId: string;
 }
 
 export interface Option<T> {
@@ -172,7 +172,7 @@ const delphiApiUrl = (path: string, config: ReadsConfig) => {
 
 export async function readLinkRecentlyAdded (link: string, config: ReadsConfig) {
   try {
-    const readsUrl = delphiApiUrl(`/api/v1/lists/${config.readingListId}/items?page=1&limit=50`, config);
+    const readsUrl = delphiApiUrl(`/api/v1/lists/${config.delphiApi.readingListId}/items?page=1&limit=50`, config);
     const response = await fetch(readsUrl, {
       method: 'GET',
       headers: {
@@ -185,7 +185,8 @@ export async function readLinkRecentlyAdded (link: string, config: ReadsConfig) 
       throw new Error(ERROR_DUPLICATE_READ);
     }
   } catch (e) {
-    throw new Error(ERROR_DUPLICATE_READ);
+    console.error('Error determining if link was recently added: ', e);
+    throw new Error(e.message || ERROR_UNKNOWN);
   }
 }
 
