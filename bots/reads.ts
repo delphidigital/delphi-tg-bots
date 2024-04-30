@@ -9,6 +9,9 @@ type ReadsTag = 'reads' | 'tweets' | 'media' | 'news' | 'podcast' | 'other';
 
 type SectorSlug = 'general' | 'finance' | 'infrastructure' | 'macro-markets' | 'metaverse';
 
+const ERROR_UNAUTHORIZED = 'ERROR_UNAUTHORIZED';
+const ERROR_UNKNOWN = 'ERROR_UNKNOWN';
+
 const types: Option<ReadsTag>[] = [
   { slug: 'reads', title: 'Reads' },
   { slug: 'media', title: 'Media' },
@@ -266,13 +269,14 @@ const handleNew = async (ctx: ReadsContext) => {
   await ctx.reply('what url do you want post?');
 };
 
-const handlePost = async (ctx: ReadsContext, config: ReadsConfig) => {
-  ensureLinkSet(ctx, async () => {
+const postRead = async (ctx: ReadsContext, config: ReadsConfig) => {
     const { delphiApi: { apiKey } } = config;
-    const postReadsUrl = delphiApiUrl('/api/v1/bots/tg/create-reads', config);
+    const postReadsUrl = delphiApiUrl('/api/v1/bots/tg/create-read', config);
     const tg_username = ctx.callbackQuery.from.username;
-  
+
     try {
+      // console.log("====== item to publish: ", {...ctx.session.item, tg_username});
+      await ctx.reply('Attempting to publish...');
       const response = await fetch(postReadsUrl, {
         method: 'POST',
         headers: {
@@ -282,16 +286,32 @@ const handlePost = async (ctx: ReadsContext, config: ReadsConfig) => {
         body: JSON.stringify({ ...ctx.session.item, tg_username })
       });
   
-      const { ok } = await response.json();
-      
-      if (ok) {
-        await ctx.reply('Item has been published. Paste another URL to start over.');
-      } else {
-        await ctx.reply('Failed to publish item'); 
+      if (response.status === 403) {
+        throw new Error(ERROR_UNAUTHORIZED);
+      } else if (response.status > 201) {
+        throw new Error(ERROR_UNKNOWN);
       }
     } catch (e) {
+      console.error('Error posting read: ', e);
+      throw new Error(ERROR_UNKNOWN);
+    }
+};
+
+const handlePost = async (ctx: ReadsContext, config: ReadsConfig) => {
+  ensureLinkSet(ctx, async () => {
+    try {
+      await postRead(ctx, config);
+      resetState(ctx);
+      await ctx.reply('Item has been published. Paste another URL to start over.');
+    } catch (e) {
       console.error('Error publishing read: ', e);
-      await ctx.reply('Failed to publish item');
+      switch (e.message) {
+        case ERROR_UNAUTHORIZED:
+          await ctx.reply('Unauthorized: reach out to engineering for assistance.');
+          break;
+        default:
+          await ctx.reply('Oops, something went wrong - try to /publish again or start over with /new');
+      }
     }
   });
 };
