@@ -106,11 +106,11 @@ export const cleanTextForMarkdown = (str: string) =>
     .replace(/@/g, '＠');
 
 export const getCleanItem = (item: ReadsItem) => {
-  return ['title', 'description', 'image_url'].reduce(
-    function (acc, key) {
-      return Object.assign(acc, {[key]: cleanTextForMarkdown(item[key])})
-  }, item
-  );
+  return ['title', 'description', 'image_url']
+    .reduce(
+      (acc, key) => ({ ...acc, [key]: cleanTextForMarkdown(item[key]) }),
+      { ...item }
+    );
 }
 
 const helpText = () => {
@@ -170,19 +170,19 @@ const delphiApiUrl = (path: string, config: ReadsConfig) => {
   return `${config.delphiApi.baseUrl}${path}`
 };
 
-export async function ensureNonDuplicateLink (link: string, config: ReadsConfig) {
-    const readsUrl = delphiApiUrl(`/api/v1/lists/${config.delphiApi.readingListId}/items?page=1&limit=50`, config);
-    const response = await fetch(readsUrl, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json'
-      }
-    });
-    const json = await response.json();
-    const matches = json.data.filter(read => read.link === link);
-    if (matches.length) {
-      throw new Error(ERROR_DUPLICATE_READ);
+export async function ensureNonDuplicateLink(link: string, config: ReadsConfig) {
+  const readsUrl = delphiApiUrl(`/api/v1/lists/${config.delphiApi.readingListId}/items?page=1&limit=50`, config);
+  const response = await fetch(readsUrl, {
+    method: 'GET',
+    headers: {
+      'Content-Type': 'application/json'
     }
+  });
+  const json = await response.json();
+  const matches = json.data.filter(read => read.link === link);
+  if (matches.length) {
+    throw new Error(ERROR_DUPLICATE_READ);
+  }
 }
 
 const fetchUrlMetadata = async (url: string, config: ReadsConfig): Promise<UrlMetadata> => {
@@ -300,27 +300,27 @@ const handleNew = async (ctx: ReadsContext) => {
 };
 
 const postRead = async (ctx: ReadsContext, config: ReadsConfig) => {
-    const { delphiApi: { apiKey } } = config;
-    const postReadsUrl = delphiApiUrl('/api/v1/bots/tg/create-read', config);
-    const tg_username = ctx.callbackQuery.from.username;
+  const { delphiApi: { apiKey } } = config;
+  const postReadsUrl = delphiApiUrl('/api/v1/bots/tg/create-read', config);
+  const tg_username = ctx.callbackQuery.from.username;
 
-    await ctx.reply('Attempting to publish...');
-    const response = await fetch(postReadsUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey
-      },
-      body: JSON.stringify({ ...ctx.session.item, tg_username })
-    });
+  await ctx.reply('Attempting to publish...');
+  const response = await fetch(postReadsUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': apiKey
+    },
+    body: JSON.stringify({ ...ctx.session.item, tg_username })
+  });
 
-    if (response.status === 403) {
-      throw new Error(ERROR_UNAUTHORIZED);
-    } else if (response.status === 409) {
-      throw new Error(ERROR_DUPLICATE_READ);
-    } else if (response.status > 201) {
-      throw new Error(ERROR_UNKNOWN);
-    }
+  if (response.status === 403) {
+    throw new Error(ERROR_UNAUTHORIZED);
+  } else if (response.status === 409) {
+    throw new Error(ERROR_DUPLICATE_READ);
+  } else if (response.status > 201) {
+    throw new Error(ERROR_UNKNOWN);
+  }
 };
 
 const handlePost = async (ctx: ReadsContext, config: ReadsConfig) => {
