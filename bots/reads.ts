@@ -155,6 +155,7 @@ const normalizeUrl = (url: string) => {
   cleanUrl = cleanUrl.replace('http://', 'https://');
 
   // normalize twitter links
+  cleanUrl = cleanUrl.replace('vxtwitter.com', 'x.com');
   cleanUrl = cleanUrl.replace('twitter.com', 'x.com');
 
   // remove query params from x.com links
