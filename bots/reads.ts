@@ -2,6 +2,7 @@ import { Telegraf, session, type Context } from 'telegraf';
 import { message } from 'telegraf/filters';
 import type { Update } from 'telegraf/types';
 import Markup from 'telegraf/markup';
+import { fetchUrlSummary } from './ai.js';
 
 type ReadsState = 'await_description' | 'await_title' | 'await_url' | 'build' | 'none';
 
@@ -46,6 +47,7 @@ interface DelphiApi {
 
 export interface ReadsConfig {
   delphiApi: DelphiApi;
+  openaiApi: string;
   botToken: string;
 }
 
@@ -410,36 +412,42 @@ const handleUpdateUrl = async (url: string, ctx: ReadsContext, config: ReadsConf
   ctx.session.item.link = cleanUrl;
 
   try {
-    metadata = await fetchUrlMetadata(cleanUrl, config);
-    await ensureNonDuplicateLink(cleanUrl, config);
+    if(cleanUrl.includes('x.com')) {
+      metadata = await fetchUrlMetadata(cleanUrl, config);
+      await ensureNonDuplicateLink(cleanUrl, config);
+
+      const { description, image, title } = metadata
+      
+      ctx.session.item.title = title || '';
+      ctx.session.item.tags = defaultTagsForUrl(cleanUrl);
+
+      ctx.session.item.description
+        = (description && description.length > 500)
+          ? description.substring(0, 497) + '...'
+          : description || '';
+    
+      ctx.session.item.image_url = image || '';
+    } else {
+      const summary = await fetchUrlSummary(cleanUrl, config)
+
+      ctx.session.item.description = summary
+      ctx.session.item.title = cleanUrl
+      ctx.session.item.image_url = ""
+    }
   } catch (e) {
-    console.error('Error proccessing handleUpdateUrl: ', e);
     if (e.message === ERROR_DUPLICATE_READ) {
       await ctx.reply('Oops, this url was recently added already');
       resetState(ctx);
       return;
     }
 
+
+
     await ctx.reply('sorry, I could not fetch that url');
     await handleNew(ctx);
     return;
   }
 
-  const { description, image, title } = metadata;
-
-  if (!cleanUrl.includes('x.com')) {
-    // not twitter, so save the title
-    ctx.session.item.title = title || '';
-  }
-
-  ctx.session.item.tags = defaultTagsForUrl(cleanUrl);
-
-  ctx.session.item.description
-    = (description && description.length > 500)
-      ? description.substring(0, 497) + '...'
-      : description || '';
-
-  ctx.session.item.image_url = image || '';
   ctx.session.state = 'build';
 
   await nextState(ctx);
