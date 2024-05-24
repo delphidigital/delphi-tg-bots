@@ -304,7 +304,7 @@ const postRead = async (ctx: ReadsContext, config: ReadsConfig) => {
   const { delphiApi: { apiKey } } = config;
   const postReadsUrl = delphiApiUrl('/api/v1/bots/tg/create-read', config);
   const tg_username = ctx.callbackQuery.from.username;
-  const item = ctx.session.item;
+  const item = { ...ctx.session.item };
 
   if (!item.description) {
     delete item.description;
