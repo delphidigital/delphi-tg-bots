@@ -2,7 +2,7 @@ import { Telegraf, session, type Context } from 'telegraf';
 import { message } from 'telegraf/filters';
 import type { Update } from 'telegraf/types';
 import Markup from 'telegraf/markup';
-import { fetchUrlSummary } from './ai.js';
+import { OPENAI_ERROR, fetchUrlSummary } from './ai.js';
 
 type ReadsState = 'await_description' | 'await_title' | 'await_url' | 'build' | 'none';
 
@@ -412,7 +412,6 @@ const handleUpdateUrl = async (url: string, ctx: ReadsContext, config: ReadsConf
   ctx.session.item.link = cleanUrl;
 
   try {
-    if(cleanUrl.includes('x.com')) {
       metadata = await fetchUrlMetadata(cleanUrl, config);
       await ensureNonDuplicateLink(cleanUrl, config);
 
@@ -427,13 +426,6 @@ const handleUpdateUrl = async (url: string, ctx: ReadsContext, config: ReadsConf
           : description || '';
     
       ctx.session.item.image_url = image || '';
-    } else {
-      const summary = await fetchUrlSummary(cleanUrl, config)
-
-      ctx.session.item.description = summary
-      ctx.session.item.title = cleanUrl
-      ctx.session.item.image_url = ""
-    }
   } catch (e) {
     if (e.message === ERROR_DUPLICATE_READ) {
       await ctx.reply('Oops, this url was recently added already');
@@ -441,11 +433,19 @@ const handleUpdateUrl = async (url: string, ctx: ReadsContext, config: ReadsConf
       return;
     }
 
+    try {
+      const summary = await fetchUrlSummary(cleanUrl, config.openaiApi)
 
-
-    await ctx.reply('sorry, I could not fetch that url');
-    await handleNew(ctx);
-    return;
+      ctx.session.item.description = summary
+      ctx.session.item.title = cleanUrl
+      ctx.session.item.image_url = ""
+    } catch(err) {
+      if(err.message === OPENAI_ERROR) {
+        await ctx.reply('sorry, I could not fetch that url');
+        await handleNew(ctx);
+        return;
+      }
+    }
   }
 
   ctx.session.state = 'build';
