@@ -304,6 +304,11 @@ const postRead = async (ctx: ReadsContext, config: ReadsConfig) => {
   const { delphiApi: { apiKey } } = config;
   const postReadsUrl = delphiApiUrl('/api/v1/bots/tg/create-read', config);
   const tg_username = ctx.callbackQuery.from.username;
+  const item = { ...ctx.session.item };
+
+  if (!item.description) {
+    delete item.description;
+  }
 
   await ctx.reply('Attempting to publish...');
   const response = await fetch(postReadsUrl, {
@@ -312,7 +317,7 @@ const postRead = async (ctx: ReadsContext, config: ReadsConfig) => {
       'Content-Type': 'application/json',
       'x-api-key': apiKey
     },
-    body: JSON.stringify({ ...ctx.session.item, tg_username })
+    body: JSON.stringify({ ...item, tg_username })
   });
 
   if (response.status === 403) {
