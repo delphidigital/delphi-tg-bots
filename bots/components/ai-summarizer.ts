@@ -1,4 +1,4 @@
-import openAI from "openai";
+import { OpenAI } from "openai";
 import { JSDOM, VirtualConsole } from "jsdom";
 import { Readability } from "@mozilla/readability";
 import { NodeHtmlMarkdown } from "node-html-markdown";
@@ -46,21 +46,17 @@ export async function fetchContentFromURL(url: string): Promise<string> {
  */
 export async function generateSummary(
   content: string,
-  openaiKey: string
+  openaiClient: OpenAI
 ): Promise<string> {
-  const openai = new openAI({
-    apiKey: openaiKey,
-    baseURL: "http://localhost:4891/v1",
-  });
   try {
-    const response = await openai.chat.completions.create({
+    const response = await openaiClient.chat.completions.create({
       model: "gpt-3.5-turbo",
       messages: [
         { role: "system", content: "You are a helpful assistant." },
         {
           role: "user",
           content:
-            "Can you help create a summary under 500 character of the following webpage?",
+            "Can you help create a summary under 500 characters of the following webpage?",
         },
         { role: "user", content: "The article is formatted as markdown." },
         {
@@ -68,11 +64,14 @@ export async function generateSummary(
           content: `The article is as follows: \n${content}`,
         },
       ],
-      temperature: 0.4,
-      max_tokens: 125, // 500 characters/4 characters per token (approximation)
+      temperature: 0.7,
+      max_tokens: 150, // 500 characters/4 characters per token + 50 (approximation)
     });
-    console.log(response.choices[0]);
-    return response.choices[0].message.content.trim();
+    let summary = response.choices[0].message.content.trim();
+    if (summary.length > 500) {
+      summary = summary.substring(0, 497) + "...";
+    }
+    return summary;
   } catch (error) {
     throw new Error(`Failed to generate summary: ${error}`);
   }
@@ -85,11 +84,14 @@ export async function generateSummary(
  */
 export async function summarizeURL(
   url: string,
-  openaiKey: string
+  openaiClient: OpenAI
 ): Promise<string> {
+  if (!openaiClient) {
+    throw new Error(`Cannot initalise OpenAI client`);
+  }
   try {
     const content = await fetchContentFromURL(url);
-    const summary = await generateSummary(content, openaiKey);
+    const summary = await generateSummary(content, openaiClient);
     return summary;
   } catch (error) {
     throw new Error(`Failed to summarize URL: ${error}`);

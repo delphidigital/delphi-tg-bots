@@ -2,6 +2,7 @@ import { Telegraf, session, type Context } from 'telegraf';
 import { message } from 'telegraf/filters';
 import type { Update } from 'telegraf/types';
 import Markup from 'telegraf/markup';
+import OpenAI from 'openai';
 import { summarizeURL } from './components/ai-summarizer.ts';
 
 type ReadsState = 'await_description' | 'await_title' | 'await_url' | 'build' | 'none';
@@ -439,7 +440,10 @@ const handleUpdateUrl = async (url: string, ctx: ReadsContext, config: ReadsConf
     ctx.session.item.title = title || "";
     // Generate and set the summary
     try {
-      const summary = await summarizeURL(url,config.openaiKey || "");
+      const openai = new OpenAI({
+        apiKey: config.openaiKey,
+      });
+      const summary = await summarizeURL(url,openai || null);
       ctx.session.item.description =
         summary.length > 500 ? summary.substring(0, 497) + "..." : summary;
     } catch (e) {
