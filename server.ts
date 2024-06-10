@@ -15,6 +15,7 @@ const {
   DELPHI_READS_BOT_TOKEN,
   DELPHI_READS_WEBHOOK_URL,
   DELPHI_READS_READING_LIST_ID,
+  OPENAI_API_KEY,
   DEV,
   PORT,
 } = process.env;
@@ -24,9 +25,11 @@ if (!DELPHI_READS_API_KEY) throw new Error('"DELPHI_READS_API_KEY" env var is re
 if (!DELPHI_API_BASE_URL) throw new Error('"DELPHI_API_BASE_URL" env var is required!');
 if (!DELPHI_READS_BOT_TOKEN) throw new Error('"DELPHI_READS_BOT_TOKEN" env var is required!');
 if (!DELPHI_READS_WEBHOOK_URL) throw new Error('"DELPHI_READS_WEBHOOK_URL" env var is required!');
+if (!OPENAI_API_KEY) throw new Error('"OPENAI_API_KEY" env var is required!');
 
 const readsBotConfiguration: ReadsConfig = {
   botToken: DELPHI_READS_BOT_TOKEN,
+  openaiKey: OPENAI_API_KEY,
   delphiApi: {
     apiKey: DELPHI_READS_API_KEY,
     baseUrl: DELPHI_API_BASE_URL,
@@ -63,8 +66,9 @@ if (DEV) {
 }
 
 // log requests
-app.use(audit({
-  request: {
+app.use(
+  audit({
+    request: {
     maskHeaders: ['x-telegram-bot-api-secret-token']
   }
 }));

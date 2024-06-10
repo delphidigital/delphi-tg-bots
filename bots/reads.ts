@@ -2,6 +2,7 @@ import { Telegraf, session, type Context } from 'telegraf';
 import { message } from 'telegraf/filters';
 import type { Update } from 'telegraf/types';
 import Markup from 'telegraf/markup';
+import { summarizeURL } from './components/ai-summarizer.ts';
 
 type ReadsState = 'await_description' | 'await_title' | 'await_url' | 'build' | 'none';
 
@@ -46,6 +47,7 @@ interface DelphiApi {
 
 export interface ReadsConfig {
   delphiApi: DelphiApi;
+  openaiKey: string;
   botToken: string;
 }
 
@@ -93,7 +95,7 @@ const createDefaultSession = (): ReadsSession => ({
 });
 
 /*
- * 
+ *
  * Utils
  *
  */
@@ -108,9 +110,9 @@ export const cleanTextForMarkdown = (str: string) =>
 export const getCleanItem = (item: ReadsItem) => {
   return ['title', 'description', 'image_url']
     .reduce(
-      (acc, key) => ({ ...acc, [key]: cleanTextForMarkdown(item[key]) }),
-      { ...item }
-    );
+    (acc, key) => ({ ...acc, [key]: cleanTextForMarkdown(item[key]) }),
+    { ...item }
+  );
 }
 
 const helpText = () => {
@@ -434,18 +436,27 @@ const handleUpdateUrl = async (url: string, ctx: ReadsContext, config: ReadsConf
 
   if (!cleanUrl.includes('x.com')) {
     // not twitter, so save the title
-    ctx.session.item.title = title || '';
+    ctx.session.item.title = title || "";
+    // Generate and set the summary
+    try {
+      const summary = await summarizeURL(url,config.openaiKey || "");
+      ctx.session.item.description =
+        summary.length > 500 ? summary.substring(0, 497) + "..." : summary;
+    } catch (e) {
+      console.error("Error generating summary: ", e);
+      ctx.session.item.description = description || "";
+    }
+  } else {
+    // Twitter URL, save the tweet text as the description
+    ctx.session.item.description =
+      description && description.length > 500
+        ? description.substring(0, 497) + "..."
+        : description || "";
   }
 
   ctx.session.item.tags = defaultTagsForUrl(cleanUrl);
-
-  ctx.session.item.description
-    = (description && description.length > 500)
-      ? description.substring(0, 497) + '...'
-      : description || '';
-
-  ctx.session.item.image_url = image || '';
-  ctx.session.state = 'build';
+  ctx.session.item.image_url = image || "";
+  ctx.session.state = "build";
 
   await nextState(ctx);
 };
