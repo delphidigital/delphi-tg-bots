@@ -449,7 +449,7 @@ const handleUpdateUrl = async (url: string, ctx: ReadsContext, config: ReadsConf
     } catch (e) {
       console.error("Error generating summary: ", e);
       ctx.session.item.description = description || "";
-      await ctx.reply('sorry, I could not generating a summary failed for that url. Please try again');
+      await ctx.reply('sorry, generating a summary failed for that url. Please try again');
     }
   } else {
     // Twitter URL, save the tweet text as the description

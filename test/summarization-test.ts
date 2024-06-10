@@ -72,8 +72,7 @@ describe("test: ai-summarizer module", () => {
     });
     it("should fetch content and process it correctly", async () => {
       const testURL = "http://example.com";
-      const testHTML =
-        "<html><body><article>Test Article</article></body></html>";
+      const testHTML = "<html><body><article>Test Article</article></body></html>";
       const expectedMarkdown = "Test Article";
 
       axiosMock.onGet(testURL).reply(200, testHTML);
@@ -124,8 +123,7 @@ describe("test: ai-summarizer module", () => {
 
     it("handles errors during OpenAI api calls", async () => {
       const testURL = "http://example.com";
-      const testHTML =
-        "<html><body><article>Test Article</article></body></html>";
+      const testHTML = "<html><body><article>Test Article</article></body></html>";
 
       axiosMock.onGet(testURL).reply(200, testHTML);
       openAiClientStub.chat.completions.create.rejects(new Error("API error"));
@@ -139,8 +137,7 @@ describe("test: ai-summarizer module", () => {
     });
     it("handles successful generation of a summary", async () => {
       const testURL = "http://example.com";
-      const testHTML =
-        "<html><body><article>Test Article</article></body></html>";
+      const testHTML = "<html><body><article>Test Article</article></body></html>";
       axiosMock.onGet(testURL).reply(200, testHTML);
       const mockResponse = {
         choices: [{ message: { content: "Generated summary here." } }],
@@ -152,8 +149,7 @@ describe("test: ai-summarizer module", () => {
     });
     it("handles string above 500 characters in summary", async () => {
       const testURL = "http://example.com";
-      const testHTML =
-        "<html><body><article>Test Article</article></body></html>";
+      const testHTML = "<html><body><article>Test Article</article></body></html>";
       axiosMock.onGet(testURL).reply(200, testHTML);
       const mockResponse = {
         choices: [{ message: { content: longLoremIpsum} }],
