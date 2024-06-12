@@ -2,10 +2,12 @@
   "compilerOptions": {
     "module": "ES2022",
     "moduleResolution": "NodeNext",
+    "allowImportingTsExtensions": true,
     "esModuleInterop": true,
     "target": "ESNext",
     "types": [
-      "node"
+      "node",
+      "mocha"
     ]
   },
 }
