@@ -407,6 +407,10 @@ const handleUpdateTitle = async (title: string, ctx: ReadsContext) => {
   await nextBuildState(ctx);
 };
 
+const truncateString = (str: string, maxLength: number): string => {
+  return str.length > maxLength ? str.substring(0, maxLength - 3) + "..." : str;
+};
+
 const handleUpdateUrl = async (url: string, ctx: ReadsContext, config: ReadsConfig) => {
   resetState(ctx);
 
@@ -444,19 +448,15 @@ const handleUpdateUrl = async (url: string, ctx: ReadsContext, config: ReadsConf
         apiKey: config.openaiKey,
       });
       const summary = await summarizeURL(url,openai || null);
-      ctx.session.item.description =
-        summary.length > 500 ? summary.substring(0, 497) + "..." : summary;
+      ctx.session.item.description = truncateString(summary,500);
     } catch (e) {
       console.error("Error generating summary: ", e);
-      ctx.session.item.description = description || "";
-      await ctx.reply('sorry, generating a summary failed for that url. Please try again');
+      ctx.session.item.description = description ? truncateString(description,500) : "";
+      await ctx.reply('sorry, generating the AI summary failed for that url. falling back to metadata description.');
     }
   } else {
     // Twitter URL, save the tweet text as the description
-    ctx.session.item.description =
-      description && description.length > 500
-        ? description.substring(0, 497) + "..."
-        : description || "";
+    ctx.session.item.description = description ? truncateString(description,500) : "";
   }
 
   ctx.session.item.tags = defaultTagsForUrl(cleanUrl);
