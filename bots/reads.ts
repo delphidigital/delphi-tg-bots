@@ -332,7 +332,7 @@ const postRead = async (ctx: ReadsContext, config: ReadsConfig) => {
     if (json.errors) {
       let msg = json.message + ': ';
       (Object.keys(json.errors)).forEach(e => {
-        msg += `[${e}]: ${json.errors[e][0]}.`;
+        msg += `[${e}]: ${json.errors[e][0]}. `;
       });
       await ctx.reply(msg);
     }
