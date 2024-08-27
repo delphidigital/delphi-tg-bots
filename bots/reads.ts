@@ -328,6 +328,14 @@ const postRead = async (ctx: ReadsContext, config: ReadsConfig) => {
   } else if (response.status === 409) {
     throw new Error(ERROR_DUPLICATE_READ);
   } else if (response.status > 201) {
+    const json = await response.json();
+    if (json.errors) {
+      let msg = json.message + ': ';
+      (Object.keys(json.errors)).forEach(e => {
+        msg += `[${e}]: ${json.errors[e][0]}. `;
+      });
+      await ctx.reply(msg);
+    }
     throw new Error(ERROR_UNKNOWN);
   }
 };
