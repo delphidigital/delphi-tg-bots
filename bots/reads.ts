@@ -7,7 +7,7 @@ import { summarizeURL } from './components/ai-summarizer.ts';
 
 type ReadsState = 'await_description' | 'await_title' | 'await_url' | 'build' | 'none';
 
-type ReadsTag = 'reads' | 'tweets' | 'media' | 'news' | 'podcast' | 'other';
+type ReadsTag = 'cryptoxai' | 'reads' | 'tweets' | 'media' | 'news' | 'podcast' | 'other';
 
 type SectorSlug = 'general' | 'finance' | 'infrastructure' | 'macro-markets' | 'metaverse';
 
@@ -16,6 +16,7 @@ const ERROR_UNKNOWN = 'ERROR_UNKNOWN';
 const ERROR_DUPLICATE_READ = 'ERROR_DUPLICATE_READ';
 
 const types: Option<ReadsTag>[] = [
+  { slug: 'cryptoxai', title: 'Crypto x AI' },
   { slug: 'reads', title: 'Reads' },
   { slug: 'media', title: 'Media' },
   { slug: 'tweets', title: 'Tweets' },
