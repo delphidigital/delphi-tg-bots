@@ -1,5 +1,5 @@
 import { Telegraf, session, type Context } from 'telegraf';
-import { message } from 'telegraf/filters';
+import fs from 'fs';
 import type { Update } from 'telegraf/types';
 import Markup from 'telegraf/markup';
 import OpenAI from 'openai';
@@ -755,7 +755,9 @@ export const clerkBot = (config: BotConfig) => {
       try {
         ctx.reply('Processing voice memo...');
         await downloadVoiceFile(voice.file_id, voice.file_unique_id);
-        const transcription = await transcribeAudio(`./${AUDIO_FILE_DIRECTORY}/${voice.file_unique_id}.oga`, openai);
+        const localFilePath = `./${AUDIO_FILE_DIRECTORY}/${voice.file_unique_id}.oga`;
+        const transcription = await transcribeAudio(localFilePath, openai);
+        fs.unlinkSync(localFilePath); // at some point, upload and embed in the AF post
         await handleSetCurrentTranscript(transcription, ctx);
         await ctx.reply(`Current Transcript:\n${transcription}`);
         await displayCreateAfPostMenu(ctx);

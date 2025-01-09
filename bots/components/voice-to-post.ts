@@ -6,7 +6,7 @@ import { finished } from 'stream/promises';
 export const AUDIO_FILE_DIRECTORY = 'audio_files';
 
 /**
- * Fetches the path of a voice file located on TG servfer
+ * Fetches the path of a voice file located on TG server
  * @param fileId The ID of the file to fetch.
  * @returns The voice file path.
  */
@@ -42,6 +42,5 @@ export async function transcribeAudio(filePath: string, openaiClient: OpenAI): P
     file: fs.createReadStream(filePath),
     model: "whisper-1",
   });
-  fs.unlinkSync(filePath);
   return transcription.text;
 }
