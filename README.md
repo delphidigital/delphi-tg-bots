@@ -32,6 +32,12 @@ npm run start:dev
 
 Dev mode will automatically configure smee to proxy requests to your local server.
 
+To simulate hitting the live endpoints to create a Read or an AF post, temporarily update fetch calls to use URLs with:
+```
+http://localhost:5555/af
+http://localhost:5555/reads
+```
+
 ## Bot Commands
 
 Use BotFather to set commands for your bot.
@@ -47,14 +53,10 @@ Use BotFather to set commands for your bot.
 3. Finally, add all your commands. Below could be used for the Delphi Reads bot:
 
 ```
+menu - Display the main menu
+newread - Create a new Delphi Read item
+newafpost - Create a new AF post
 help - Get help or provide feedback
-new - Create a new Delphi Read item
-publish - Publish your Delphi Read item to the portal
-preview - View preview of your current Delphi Read item
-setdescription - Set the description for your current Delphi Read item
-settitle - Set the title for your current Delphi Read item
-settype - Set the type for your current Delphi Read item
-setsector - Set the sector for your current Delphi Read item
 ```
 
 ## Deployment
