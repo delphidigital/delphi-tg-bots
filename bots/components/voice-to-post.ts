@@ -27,8 +27,7 @@ export async function getTgFilePathFromFileId(fileId: string) {
  * @param filename The name of local file to save w/o file extension
  */
 export async function downloadVoiceFileFromTg(filePath: string, filename: string) {
-  const localFile = `${AUDIO_FILE_DIRECTORY}/${filename}.oga`;
-  const stream = fs.createWriteStream(localFile);
+  const stream = fs.createWriteStream(`${AUDIO_FILE_DIRECTORY}/${filename}.oga`);
   const { body } = await fetch(`https://api.telegram.org/file/bot${process.env.DELPHI_READS_BOT_TOKEN}/${filePath}`);
   await finished(Readable.fromWeb(body).pipe(stream));
 }
