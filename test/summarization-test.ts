@@ -6,7 +6,6 @@ import {
   truncateStringToTokenCount,
   removeLinksFromMarkdown,
   fetchContentFromURL,
-  generateSummary,
   summarizeURL,
 } from "../bots/components/ai-summarizer.ts";
 
