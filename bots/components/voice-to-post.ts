@@ -1,9 +1,10 @@
 import fs from 'fs';
+import { ensureDir } from 'fs-extra/esm'
 import OpenAI from "openai";
 import { Readable } from 'stream';
 import { finished } from 'stream/promises';
 
-export const AUDIO_FILE_DIRECTORY = 'audio_files';
+export const AUDIO_FILE_DIRECTORY = '/tmp/audio_files';
 
 /**
  * Fetches the path of a voice file located on TG server
@@ -27,6 +28,7 @@ export async function getTgFilePathFromFileId(fileId: string) {
  * @param filename The name of local file to save w/o file extension
  */
 export async function downloadVoiceFileFromTg(filePath: string, filename: string) {
+  await ensureDir(AUDIO_FILE_DIRECTORY);
   const stream = fs.createWriteStream(`${AUDIO_FILE_DIRECTORY}/${filename}.oga`);
   const { body } = await fetch(`https://api.telegram.org/file/bot${process.env.DELPHI_READS_BOT_TOKEN}/${filePath}`);
   await finished(Readable.fromWeb(body).pipe(stream));

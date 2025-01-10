@@ -755,7 +755,7 @@ export const clerkBot = (config: BotConfig) => {
       try {
         ctx.reply('Processing voice memo...');
         await downloadVoiceFile(voice.file_id, voice.file_unique_id);
-        const localFilePath = `./${AUDIO_FILE_DIRECTORY}/${voice.file_unique_id}.oga`;
+        const localFilePath = `${AUDIO_FILE_DIRECTORY}/${voice.file_unique_id}.oga`;
         const transcription = await transcribeAudio(localFilePath, openai);
         fs.unlinkSync(localFilePath); // at some point, upload and embed in the AF post
         await handleSetCurrentTranscript(transcription, ctx);
