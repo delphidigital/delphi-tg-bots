@@ -13,7 +13,7 @@ import {
 
 type BotState = 'await_description' | 'await_voice_title' | 'await_transcript' | 'await_title' | 'await_memo' | 'await_url' | 'build' | 'none';
 
-type ReadsTag = 'cryptoxai' | 'reads' | 'tweets' | 'media' | 'news' | 'podcast' | 'other';
+type ReadsTag = 'reads' | 'tweets' | 'media' | 'news' | 'podcast' | 'other';
 
 type SectorSlug = 'ai' | 'general' | 'finance' | 'infrastructure' | 'macro-markets' | 'metaverse';
 
@@ -22,7 +22,6 @@ const ERROR_UNKNOWN = 'ERROR_UNKNOWN';
 const ERROR_DUPLICATE_READ = 'ERROR_DUPLICATE_READ';
 
 const types: Option<ReadsTag>[] = [
-  { slug: 'cryptoxai', title: 'Crypto x AI' },
   { slug: 'reads', title: 'Reads' },
   { slug: 'media', title: 'Media' },
   { slug: 'tweets', title: 'Tweets' },
