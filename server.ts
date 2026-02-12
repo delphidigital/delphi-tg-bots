@@ -117,8 +117,12 @@ const readsSecretToken = crypto.randomBytes(64).toString("hex");
 app.use(readsBot.webhookCallback(readsWebhookPath, { secretToken: readsSecretToken }));
 await readsBot.telegram.setWebhook(readsBotWebhookUrl, { secret_token: readsSecretToken });
 
-// Calendar bot webhook (if enabled)
-if (calBot && CALENDAR_WEBHOOK_URL) {
+// Calendar bot: use polling in dev, webhooks in prod
+if (calBot && DEV) {
+  // In dev mode, use long-polling (no public URL needed)
+  calBot.launch();
+  console.log('Calendar bot started in POLLING mode (dev)');
+} else if (calBot && CALENDAR_WEBHOOK_URL) {
   const calendarSecretToken = crypto.randomBytes(64).toString("hex");
   const calendarBotWebhookUrl = `${CALENDAR_WEBHOOK_URL}${calendarWebhookPath}`;
   app.use(calBot.webhookCallback(calendarWebhookPath, { secretToken: calendarSecretToken }));
