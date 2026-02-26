@@ -364,7 +364,10 @@ export function calendarBot(config: CalendarBotConfig): Telegraf<CalendarContext
       const result = await createEvent(config, ctx.session.event, username);
 
       if (result.ok) {
-        await ctx.reply('✅ <b>Event created successfully!</b>', { parse_mode: 'HTML' });
+        await ctx.reply(
+          '✅ <b>Event submitted for review!</b>\n\nAn admin will approve it before it appears on the calendar.',
+          { parse_mode: 'HTML' }
+        );
       } else {
         await ctx.reply(`❌ Failed to create event: ${result.error}`);
       }
