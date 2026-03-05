@@ -1,6 +1,5 @@
-import { Telegraf, session, type Context } from 'telegraf';
+import { Telegraf, session, Markup, type Context } from 'telegraf';
 import type { Update } from 'telegraf/types';
-import Markup from 'telegraf/markup';
 
 // ==================== Types ====================
 

@@ -126,6 +126,10 @@ if (calBot && DEV) {
   // In dev mode, use long-polling (no public URL needed)
   await calBot.launch();
   console.log('Calendar bot started in POLLING mode (dev)');
+
+  // Handle graceful shutdown so the Telegraf polling loop stops cleanly
+  process.once('SIGINT', () => calBot.stop('SIGINT'));
+  process.once('SIGTERM', () => calBot.stop('SIGTERM'));
 } else if (calBot && CALENDAR_WEBHOOK_URL) {
   const calendarSecretToken = crypto.randomBytes(64).toString("hex");
   const calendarBotWebhookUrl = `${CALENDAR_WEBHOOK_URL}${calendarWebhookPath}`;
