@@ -79,7 +79,11 @@ if (calendarBotEnabled) {
     CALENDAR_API_KEY: mask(CALENDAR_API_KEY),
   });
 } else {
-  console.log('Calendar Bot: DISABLED (missing env vars: CALENDAR_BOT_TOKEN, CALENDAR_WEBHOOK_URL, CALENDAR_API_KEY)');
+  const missing: string[] = [];
+  if (!CALENDAR_BOT_TOKEN) missing.push('CALENDAR_BOT_TOKEN');
+  if (!CALENDAR_API_KEY) missing.push('CALENDAR_API_KEY');
+  if (!DEV && !CALENDAR_WEBHOOK_URL) missing.push('CALENDAR_WEBHOOK_URL');
+  console.log(`Calendar Bot: DISABLED (missing env vars: ${missing.join(', ')})`);
 }
 
 // ==================== Express Server ====================
@@ -120,7 +124,7 @@ await readsBot.telegram.setWebhook(readsBotWebhookUrl, { secret_token: readsSecr
 // Calendar bot: use polling in dev, webhooks in prod
 if (calBot && DEV) {
   // In dev mode, use long-polling (no public URL needed)
-  calBot.launch();
+  await calBot.launch();
   console.log('Calendar bot started in POLLING mode (dev)');
 } else if (calBot && CALENDAR_WEBHOOK_URL) {
   const calendarSecretToken = crypto.randomBytes(64).toString("hex");

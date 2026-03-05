@@ -5,7 +5,10 @@
  * Usage: DEV=1 npx tsx test-calendar-bot.ts
  */
 
+import dotenv from 'dotenv';
 import { CalendarBotConfig, calendarBot } from './bots/calendar-bot.ts';
+
+dotenv.config();
 
 const CALENDAR_BOT_TOKEN = process.env.CALENDAR_BOT_TOKEN;
 const CALENDAR_API_KEY = process.env.CALENDAR_API_KEY;
@@ -32,5 +35,5 @@ const bot = calendarBot(config);
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
 
-bot.launch();
+await bot.launch();
 console.log('Calendar Bot is running! Send /start to @DelphiCalendarBetaBot on Telegram.');
