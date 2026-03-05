@@ -294,7 +294,25 @@ export function calendarBot(config: CalendarBotConfig): Telegraf<CalendarContext
 
     message += `\n━━━━━━━━━━━━━━━━━━━\n📊 ${total} event${total === 1 ? '' : 's'} total`;
 
-    await ctx.reply(message, { parse_mode: 'HTML' });
+    // Telegram has a 4096 char limit per message
+    if (message.length > 4000) {
+      const chunks: string[] = [];
+      let current = '';
+      for (const line of message.split('\n')) {
+        if (current.length + line.length + 1 > 4000) {
+          chunks.push(current);
+          current = line;
+        } else {
+          current += (current ? '\n' : '') + line;
+        }
+      }
+      if (current) chunks.push(current);
+      for (const chunk of chunks) {
+        await ctx.reply(chunk, { parse_mode: 'HTML' });
+      }
+    } else {
+      await ctx.reply(message, { parse_mode: 'HTML' });
+    }
   });
 
   // ==================== /categories ====================
@@ -480,7 +498,11 @@ export function calendarBot(config: CalendarBotConfig): Telegraf<CalendarContext
         } else {
           // Basic URL validation
           try {
-            new URL(text);
+            const parsed = new URL(text);
+            if (!['http:', 'https:'].includes(parsed.protocol)) {
+              await ctx.reply('⚠️ Only http/https URLs are allowed. Try again or /skip:');
+              return;
+            }
             ctx.session.event.link = text;
           } catch {
             await ctx.reply('⚠️ Invalid URL. Please enter a valid URL or /skip:');
