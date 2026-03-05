@@ -205,7 +205,7 @@ async function createEvent(
     console.error(`Create event failed (${response.status}):`, errorBody);
 
     if (response.status === 401) return { ok: false, error: 'Unauthorized. Check API key.' };
-    if (response.status === 422) return { ok: false, error: `Validation error: ${errorBody}` };
+    if (response.status === 422) return { ok: false, error: 'Validation error. Please check event details and try again.' };
     return { ok: false, error: `Server error (${response.status})` };
   } catch (error) {
     console.error('Failed to create event:', error);
