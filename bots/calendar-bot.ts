@@ -521,6 +521,14 @@ export function calendarBot(config: CalendarBotConfig): Telegraf<CalendarContext
         break;
       }
 
+      case 'await_category':
+        await ctx.reply('⚠️ Please use the buttons above to select a category, or /cancel to start over.');
+        break;
+
+      case 'confirm':
+        await ctx.reply('⚠️ Please use the buttons above to confirm or cancel, or /cancel to start over.');
+        break;
+
       default:
         break;
     }

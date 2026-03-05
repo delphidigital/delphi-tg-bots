@@ -59,7 +59,7 @@ console.log('Reads Bot Configuration:', {
 
 // ==================== Calendar Bot ====================
 
-const calendarBotEnabled = !!(CALENDAR_BOT_TOKEN && CALENDAR_WEBHOOK_URL && CALENDAR_API_KEY);
+const calendarBotEnabled = !!(CALENDAR_BOT_TOKEN && CALENDAR_API_KEY && (DEV || CALENDAR_WEBHOOK_URL));
 let calBot: ReturnType<typeof calendarBot> | null = null;
 
 if (calendarBotEnabled) {
