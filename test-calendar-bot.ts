@@ -24,7 +24,7 @@ const config: CalendarBotConfig = {
 
 console.log('Starting Calendar Bot in polling mode...');
 console.log(`  API: ${DELPHI_API_BASE_URL}`);
-console.log(`  Token: ${CALENDAR_BOT_TOKEN.slice(0, 10)}...`);
+console.log('  Token: [redacted]');
 
 const bot = calendarBot(config);
 
@@ -33,4 +33,4 @@ process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
 
 bot.launch();
-console.log('Calendar Bot is running! Send /start to @DelphiCalenderBetaBot on Telegram.');
+console.log('Calendar Bot is running! Send /start to @DelphiCalendarBetaBot on Telegram.');

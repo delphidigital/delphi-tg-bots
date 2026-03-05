@@ -71,14 +71,25 @@ const TENANT_HEADER = 'x-tenant-id';
 const TENANT = 'delphi';
 
 const isValidDate = (str: string): boolean => {
-  const match = str.match(/^\d{4}-\d{2}-\d{2}$/);
+  const match = str.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (!match) return false;
-  const date = new Date(str + 'T00:00:00Z');
-  return !isNaN(date.getTime());
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return (
+    date.getUTCFullYear() === year &&
+    date.getUTCMonth() === month - 1 &&
+    date.getUTCDate() === day
+  );
 };
 
 const isValidTime = (str: string): boolean => {
-  return /^\d{2}:\d{2}$/.test(str);
+  const match = str.match(/^(\d{2}):(\d{2})$/);
+  if (!match) return false;
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  return hours >= 0 && hours <= 23 && minutes >= 0 && minutes <= 59;
 };
 
 const formatDate = (dateStr: string): string => {
@@ -273,7 +284,7 @@ export function calendarBot(config: CalendarBotConfig): Telegraf<CalendarContext
       const endDate = event.end_date && event.end_date !== event.date
         ? ` – ${formatDate(event.end_date)}`
         : '';
-      const link = event.link ? `\n   🔗 ${event.link}` : '';
+      const link = event.link ? `\n   🔗 ${escapeHtml(event.link)}` : '';
 
       message +=
         `\n📌 <b>${escapeHtml(event.name)}</b>\n` +
@@ -298,7 +309,7 @@ export function calendarBot(config: CalendarBotConfig): Telegraf<CalendarContext
 
     let message = '🏷 <b>Calendar Categories</b>\n\n';
     for (const cat of categories) {
-      message += `  • <b>${escapeHtml(cat.name)}</b> (${cat.slug})\n`;
+      message += `  • <b>${escapeHtml(cat.name)}</b> (${escapeHtml(cat.slug)})\n`;
     }
 
     await ctx.reply(message, { parse_mode: 'HTML' });
@@ -317,7 +328,7 @@ export function calendarBot(config: CalendarBotConfig): Telegraf<CalendarContext
     ctx.session.state = 'await_name';
     ctx.session.event = createNewEventDraft();
 
-    await ctx.reply('📝 <b>Create New Event</b>\n\nStep 1/7: Enter the event name:', {
+    await ctx.reply('📝 <b>Create New Event</b>\n\nStep 1/8: Enter the event name:', {
       parse_mode: 'HTML',
     });
   });
@@ -348,7 +359,7 @@ export function calendarBot(config: CalendarBotConfig): Telegraf<CalendarContext
 
       await ctx.reply(
         `✅ Category: <b>${escapeHtml(category.name)}</b>\n\n` +
-          'Step 5/7: Enter a description (or send /skip):',
+          'Step 6/8: Enter a description (or send /skip):',
         { parse_mode: 'HTML' }
       );
       return;
@@ -405,7 +416,7 @@ export function calendarBot(config: CalendarBotConfig): Telegraf<CalendarContext
         }
         ctx.session.event.name = text;
         ctx.session.state = 'await_date';
-        await ctx.reply('Step 2/7: Enter the event date (YYYY-MM-DD):');
+        await ctx.reply('Step 2/8: Enter the event date (YYYY-MM-DD):');
         break;
       }
 
@@ -416,7 +427,7 @@ export function calendarBot(config: CalendarBotConfig): Telegraf<CalendarContext
         }
         ctx.session.event.date = text;
         ctx.session.state = 'await_time';
-        await ctx.reply('Step 3/7: Enter the event time in 24h format (HH:MM) or send /skip:');
+        await ctx.reply('Step 3/8: Enter the event time in 24h format (HH:MM) or send /skip:');
         break;
       }
 
@@ -430,7 +441,7 @@ export function calendarBot(config: CalendarBotConfig): Telegraf<CalendarContext
           ctx.session.event.time = text;
         }
         ctx.session.state = 'await_end_date';
-        await ctx.reply('Step 3.5/7: Enter end date (YYYY-MM-DD) for multi-day events, or /skip:');
+        await ctx.reply('Step 4/8: Enter end date (YYYY-MM-DD) for multi-day events, or /skip:');
         break;
       }
 
@@ -452,14 +463,14 @@ export function calendarBot(config: CalendarBotConfig): Telegraf<CalendarContext
         const buttons = ctx.session.categories.map((cat) => [
           Markup.button.callback(cat.name, `cat_${cat.id}`),
         ]);
-        await ctx.reply('Step 4/7: Select a category:', Markup.inlineKeyboard(buttons));
+        await ctx.reply('Step 5/8: Select a category:', Markup.inlineKeyboard(buttons));
         break;
       }
 
       case 'await_description': {
         ctx.session.event.description = isSkip ? '' : text;
         ctx.session.state = 'await_link';
-        await ctx.reply('Step 6/7: Enter a URL link (or send /skip):');
+        await ctx.reply('Step 7/8: Enter a URL link (or send /skip):');
         break;
       }
 
@@ -483,7 +494,7 @@ export function calendarBot(config: CalendarBotConfig): Telegraf<CalendarContext
         const timeStr = event.time ? ` at ${formatTime(event.time)}` : '';
         const endStr = event.end_date ? ` – ${formatDate(event.end_date)}` : '';
         const descStr = event.description ? `\n📝 ${escapeHtml(event.description)}` : '';
-        const linkStr = event.link ? `\n🔗 ${event.link}` : '';
+        const linkStr = event.link ? `\n🔗 ${escapeHtml(event.link)}` : '';
 
         const preview =
           '📋 <b>Event Preview</b>\n━━━━━━━━━━━━━━━━━━━\n' +
@@ -493,7 +504,7 @@ export function calendarBot(config: CalendarBotConfig): Telegraf<CalendarContext
           descStr +
           linkStr +
           '\n━━━━━━━━━━━━━━━━━━━\n' +
-          'Step 7/7: Confirm creation?';
+          'Step 8/8: Confirm creation?';
 
         await ctx.reply(
           preview,
