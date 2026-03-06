@@ -291,7 +291,11 @@ export function calendarBot(config: CalendarBotConfig): Telegraf<CalendarContext
         `   🏷 ${escapeHtml(category)}${link}\n`;
     }
 
-    message += `\n━━━━━━━━━━━━━━━━━━━\n📊 ${total} event${total === 1 ? '' : 's'} total`;
+    const shown = events.length;
+    const footer = shown < total
+      ? `📊 Showing ${shown} of ${total} events`
+      : `📊 ${total} event${total === 1 ? '' : 's'} total`;
+    message += `\n━━━━━━━━━━━━━━━━━━━\n${footer}`;
 
     // Telegram has a 4096 char limit per message
     if (message.length > 4000) {
