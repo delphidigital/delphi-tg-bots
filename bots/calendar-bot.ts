@@ -112,7 +112,7 @@ const formatTime = (timeStr: string): string => {
 
 // ==================== API Functions ====================
 
-async function fetchCategories(config: CalendarBotConfig): Promise<CalendarCategory[]> {
+async function fetchCategories(config: CalendarBotConfig): Promise<CalendarCategory[] | null> {
   const url = apiUrl('/api/v1/calendar/categories', config);
   try {
     const response = await fetch(url, {
@@ -123,7 +123,7 @@ async function fetchCategories(config: CalendarBotConfig): Promise<CalendarCateg
     return data.categories || [];
   } catch (error) {
     console.error('Failed to fetch categories:', error);
-    return [];
+    return null;
   }
 }
 
@@ -319,6 +319,11 @@ export function calendarBot(config: CalendarBotConfig): Telegraf<CalendarContext
   bot.command('categories', async (ctx) => {
     const categories = await fetchCategories(config);
 
+    if (categories === null) {
+      await ctx.reply('⚠️ Could not load categories. Please try again later.');
+      return;
+    }
+
     if (categories.length === 0) {
       await ctx.reply('No categories found.');
       return;
@@ -336,11 +341,12 @@ export function calendarBot(config: CalendarBotConfig): Telegraf<CalendarContext
 
   bot.command('addevent', async (ctx) => {
     // Prefetch categories
-    ctx.session.categories = await fetchCategories(config);
-    if (ctx.session.categories.length === 0) {
+    const categories = await fetchCategories(config);
+    if (!categories || categories.length === 0) {
       await ctx.reply('⚠️ Could not load categories. Please try again later.');
       return;
     }
+    ctx.session.categories = categories;
 
     ctx.session.state = 'await_name';
     ctx.session.event = createNewEventDraft();
