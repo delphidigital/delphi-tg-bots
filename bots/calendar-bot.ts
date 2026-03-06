@@ -21,7 +21,7 @@ interface CalendarCategory {
   color: string;
 }
 
-interface CalendarEventDraft {
+export interface CalendarEventDraft {
   name: string;
   date: string;
   time: string;
@@ -52,7 +52,7 @@ export interface CalendarBotConfig {
 
 // ==================== Helpers ====================
 
-const createNewEventDraft = (): CalendarEventDraft => ({
+export const createNewEventDraft = (): CalendarEventDraft => ({
   name: '',
   date: '',
   time: '',
@@ -63,13 +63,13 @@ const createNewEventDraft = (): CalendarEventDraft => ({
   link: '',
 });
 
-const apiUrl = (path: string, config: CalendarBotConfig) =>
+export const apiUrl = (path: string, config: CalendarBotConfig) =>
   `${config.delphiApi.baseUrl}${path}`;
 
 const TENANT_HEADER = 'x-tenant-id';
 const TENANT = 'delphi';
 
-const isValidDate = (str: string): boolean => {
+export const isValidDate = (str: string): boolean => {
   const match = str.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (!match) return false;
   const year = Number(match[1]);
@@ -83,7 +83,7 @@ const isValidDate = (str: string): boolean => {
   );
 };
 
-const isValidTime = (str: string): boolean => {
+export const isValidTime = (str: string): boolean => {
   const match = str.match(/^(\d{2}):(\d{2})$/);
   if (!match) return false;
   const hours = Number(match[1]);
@@ -91,7 +91,7 @@ const isValidTime = (str: string): boolean => {
   return hours >= 0 && hours <= 23 && minutes >= 0 && minutes <= 59;
 };
 
-const formatDate = (dateStr: string): string => {
+export const formatDate = (dateStr: string): string => {
   const date = new Date(dateStr + 'T00:00:00Z');
   return date.toLocaleDateString('en-US', {
     weekday: 'short',
@@ -102,7 +102,7 @@ const formatDate = (dateStr: string): string => {
   });
 };
 
-const formatTime = (timeStr: string): string => {
+export const formatTime = (timeStr: string): string => {
   if (!timeStr) return '';
   const [h, m] = timeStr.split(':').map(Number);
   const period = h >= 12 ? 'PM' : 'AM';
@@ -112,7 +112,7 @@ const formatTime = (timeStr: string): string => {
 
 // ==================== API Functions ====================
 
-async function fetchCategories(config: CalendarBotConfig): Promise<CalendarCategory[] | null> {
+export async function fetchCategories(config: CalendarBotConfig): Promise<CalendarCategory[] | null> {
   const url = apiUrl('/api/v1/calendar/categories', config);
   try {
     const response = await fetch(url, {
@@ -141,7 +141,7 @@ interface EventsApiResponse {
   total: number;
 }
 
-async function fetchUpcomingEvents(
+export async function fetchUpcomingEvents(
   config: CalendarBotConfig,
   days: number = 7
 ): Promise<EventsApiResponse> {
@@ -165,7 +165,7 @@ async function fetchUpcomingEvents(
   }
 }
 
-async function createEvent(
+export async function createEvent(
   config: CalendarBotConfig,
   event: CalendarEventDraft,
   tgUsername: string
@@ -566,7 +566,7 @@ export function calendarBot(config: CalendarBotConfig): Telegraf<CalendarContext
 
 // ==================== Utility ====================
 
-function escapeHtml(text: string): string {
+export function escapeHtml(text: string): string {
   return text
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
