@@ -191,7 +191,7 @@ export async function createEvent(
       headers: {
         'Content-Type': 'application/json',
         [TENANT_HEADER]: TENANT,
-        'x-api-key': config.delphiApi.calendarApiKey,
+        Authorization: `Bearer ${config.delphiApi.calendarApiKey}`,
       },
       body: JSON.stringify(body),
     });
