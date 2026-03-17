@@ -4,6 +4,7 @@ import express from 'express';
 
 import { BotConfig, clerkBot } from './bots/delphi-clerk.ts';
 import { CalendarBotConfig, calendarBot } from './bots/calendar-bot.ts';
+import { SignalBotConfig, signalBot } from './bots/signal-bot.ts';
 import { mask } from './utils/index.js';
 import audit from 'express-requests-logger';
 import SmeeClient from 'smee-client';
@@ -22,6 +23,10 @@ const {
   CALENDAR_BOT_TOKEN,
   CALENDAR_WEBHOOK_URL,
   CALENDAR_API_KEY,
+  // Signal bot env vars
+  SIGNAL_BOT_TOKEN,
+  SIGNAL_WEBHOOK_URL,
+  PIPELINE_API_URL,
   DEV,
   PORT,
 } = process.env;
@@ -86,6 +91,32 @@ if (calendarBotEnabled) {
   console.log(`Calendar Bot: DISABLED (missing env vars: ${missing.join(', ')})`);
 }
 
+// ==================== Signal Bot ====================
+
+const signalBotEnabled = !!(SIGNAL_BOT_TOKEN && PIPELINE_API_URL && (DEV || SIGNAL_WEBHOOK_URL));
+let sigBot: ReturnType<typeof signalBot> | null = null;
+
+if (signalBotEnabled) {
+  const signalBotConfig: SignalBotConfig = {
+    botToken: SIGNAL_BOT_TOKEN,
+    pipelineApiUrl: PIPELINE_API_URL,
+  };
+
+  sigBot = signalBot(signalBotConfig);
+
+  console.log('Signal Bot Configuration:', {
+    PIPELINE_API_URL,
+    SIGNAL_WEBHOOK_URL,
+    SIGNAL_BOT_TOKEN: mask(SIGNAL_BOT_TOKEN),
+  });
+} else {
+  const missing: string[] = [];
+  if (!SIGNAL_BOT_TOKEN) missing.push('SIGNAL_BOT_TOKEN');
+  if (!PIPELINE_API_URL) missing.push('PIPELINE_API_URL');
+  if (!DEV && !SIGNAL_WEBHOOK_URL) missing.push('SIGNAL_WEBHOOK_URL');
+  console.log(`Signal Bot: DISABLED (missing env vars: ${missing.join(', ')})`);
+}
+
 // ==================== Express Server ====================
 
 const readsWebhookPath = '/webhooks/reads';
@@ -138,6 +169,21 @@ if (calBot && DEV) {
   console.log(`Calendar bot webhook registered at ${calendarWebhookPath}`);
 }
 
+// Signal bot: use polling in dev, webhooks in prod
+const signalWebhookPath = '/webhooks/signal';
+if (sigBot && DEV) {
+  await sigBot.launch();
+  console.log('Signal bot started in POLLING mode (dev)');
+  process.once('SIGINT', () => sigBot!.stop('SIGINT'));
+  process.once('SIGTERM', () => sigBot!.stop('SIGTERM'));
+} else if (sigBot && SIGNAL_WEBHOOK_URL) {
+  const signalSecretToken = crypto.randomBytes(64).toString("hex");
+  const signalBotWebhookUrl = `${SIGNAL_WEBHOOK_URL}${signalWebhookPath}`;
+  app.use(sigBot.webhookCallback(signalWebhookPath, { secretToken: signalSecretToken }));
+  await sigBot.telegram.setWebhook(signalBotWebhookUrl, { secret_token: signalSecretToken });
+  console.log(`Signal bot webhook registered at ${signalWebhookPath}`);
+}
+
 // configure dev-only endpoints
 if (DEV) {
   // for posting reads items to localhost when running locally
@@ -159,6 +205,7 @@ app.get('/health', (_req, res) => {
     bots: {
       reads: true,
       calendar: calendarBotEnabled,
+      signal: signalBotEnabled,
     },
   });
 });
@@ -166,5 +213,5 @@ app.get('/health', (_req, res) => {
 // Start Express Server
 app.listen(port, () => {
   console.log(`Express server is listening on ${port}`);
-  console.log(`Bots active: reads=true, calendar=${calendarBotEnabled}`);
+  console.log(`Bots active: reads=true, calendar=${calendarBotEnabled}, signal=${signalBotEnabled}`);
 });
