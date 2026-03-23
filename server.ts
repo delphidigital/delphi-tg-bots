@@ -20,6 +20,7 @@ const {
   DELPHI_READS_READING_LIST_ID,
   OPENAI_API_KEY,
   // Calendar bot env vars
+  HYDRA_API_BASE_URL,
   CALENDAR_BOT_TOKEN,
   CALENDAR_WEBHOOK_URL,
   CALENDAR_API_KEY,
@@ -64,14 +65,14 @@ console.log('Reads Bot Configuration:', {
 
 // ==================== Calendar Bot ====================
 
-const calendarBotEnabled = !!(CALENDAR_BOT_TOKEN && CALENDAR_API_KEY && (DEV || CALENDAR_WEBHOOK_URL));
+const calendarBotEnabled = !!(HYDRA_API_BASE_URL && CALENDAR_BOT_TOKEN && CALENDAR_API_KEY && (DEV || CALENDAR_WEBHOOK_URL));
 let calBot: ReturnType<typeof calendarBot> | null = null;
 
 if (calendarBotEnabled) {
   const calendarBotConfig: CalendarBotConfig = {
     botToken: CALENDAR_BOT_TOKEN,
     delphiApi: {
-      baseUrl: DELPHI_API_BASE_URL,
+      baseUrl: HYDRA_API_BASE_URL,
       calendarApiKey: CALENDAR_API_KEY,
     },
   };
@@ -79,12 +80,14 @@ if (calendarBotEnabled) {
   calBot = calendarBot(calendarBotConfig);
 
   console.log('Calendar Bot Configuration:', {
+    HYDRA_API_BASE_URL,
     CALENDAR_WEBHOOK_URL,
     CALENDAR_BOT_TOKEN: mask(CALENDAR_BOT_TOKEN),
     CALENDAR_API_KEY: mask(CALENDAR_API_KEY),
   });
 } else {
   const missing: string[] = [];
+  if (!HYDRA_API_BASE_URL) missing.push('HYDRA_API_BASE_URL');
   if (!CALENDAR_BOT_TOKEN) missing.push('CALENDAR_BOT_TOKEN');
   if (!CALENDAR_API_KEY) missing.push('CALENDAR_API_KEY');
   if (!DEV && !CALENDAR_WEBHOOK_URL) missing.push('CALENDAR_WEBHOOK_URL');
