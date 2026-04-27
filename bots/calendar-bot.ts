@@ -128,17 +128,22 @@ export async function fetchCategories(config: CalendarBotConfig): Promise<Calend
 }
 
 interface EventsApiResponse {
-  events: Array<{
-    id: string;
-    name: string;
-    date: string;
-    time: string | null;
-    end_date: string | null;
-    description: string | null;
-    link: string | null;
-    category: { name: string; slug: string } | null;
-  }>;
+  events: CalendarEventResponse[];
   total: number;
+}
+
+export interface CalendarEventResponse {
+  id: string;
+  name: string;
+  date: string;
+  time: string | null;
+  end_date: string | null;
+  description: string | null;
+  link: string | null;
+  category: { name: string; slug: string } | null;
+  is_hot?: boolean;
+  hot_reason?: string | null;
+  hot_source?: string | null;
 }
 
 export async function fetchUpcomingEvents(
@@ -161,6 +166,30 @@ export async function fetchUpcomingEvents(
     return (await response.json()) as EventsApiResponse;
   } catch (error) {
     console.error('Failed to fetch upcoming events:', error);
+    return { events: [], total: 0 };
+  }
+}
+
+export async function fetchHotEvents(
+  config: CalendarBotConfig,
+  days: number = 7
+): Promise<EventsApiResponse> {
+  const today = new Date().toISOString().split('T')[0];
+  const endDate = new Date(Date.now() + days * 86400000).toISOString().split('T')[0];
+
+  const url = apiUrl(
+    `/api/v1/calendar/events?start_date=${today}&end_date=${endDate}&status=published&is_hot=true&limit=10`,
+    config
+  );
+
+  try {
+    const response = await fetch(url, {
+      headers: { [TENANT_HEADER]: TENANT },
+    });
+    if (!response.ok) throw new Error(`API returned ${response.status}`);
+    return (await response.json()) as EventsApiResponse;
+  } catch (error) {
+    console.error('Failed to fetch hot events:', error);
     return { events: [], total: 0 };
   }
 }
@@ -318,6 +347,27 @@ export function calendarBot(config: CalendarBotConfig): Telegraf<CalendarContext
     }
   });
 
+  // ==================== /hotlist ====================
+  // Standalone preview of the hot block + feedback prompt. Same content the
+  // weekly digest uses, useful for ad-hoc curator/QA checks before the digest
+  // sends to the broader Delphi research chat.
+  bot.command('hotlist', async (ctx) => {
+    await ctx.reply('⏳ Fetching hot events...');
+
+    const { events } = await fetchHotEvents(config);
+    const block = formatHotListBlock(events);
+
+    if (!block) {
+      await ctx.reply('🔥 No hot events flagged for the next 7 days.');
+      return;
+    }
+
+    await ctx.reply(`${block}\n\nWas this useful?`, {
+      parse_mode: 'HTML',
+      ...hotFeedbackKeyboard(),
+    });
+  });
+
   // ==================== /categories ====================
 
   bot.command('categories', async (ctx) => {
@@ -365,6 +415,20 @@ export function calendarBot(config: CalendarBotConfig): Telegraf<CalendarContext
   bot.on('callback_query', async (ctx) => {
     const data = 'data' in ctx.callbackQuery ? ctx.callbackQuery.data : undefined;
     if (!data) return;
+
+    // Hot-list feedback: log for prompt iteration in Stage 2/3, ack to user.
+    // Acked before any other branches so the toast feedback is snappy.
+    if (data === 'hot_feedback_up' || data === 'hot_feedback_down') {
+      const username = ctx.callbackQuery.from?.username || ctx.callbackQuery.from?.id || 'unknown';
+      const verdict = data === 'hot_feedback_up' ? 'helpful' : 'not_useful';
+      console.info(
+        `[hot_feedback] user=${username} verdict=${verdict} message_id=${ctx.callbackQuery.message?.message_id ?? 'unknown'}`
+      );
+      await ctx.answerCbQuery(
+        verdict === 'helpful' ? '🙏 Thanks for the signal!' : 'Got it — we’ll tune the picks.'
+      );
+      return;
+    }
 
     await ctx.answerCbQuery();
 
@@ -575,4 +639,88 @@ export function escapeHtml(text: string): string {
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;');
+}
+
+// ==================== Hot list (Phase 1) ====================
+
+/**
+ * Format the hot-list block that sits at the top of the weekly digest and
+ * the /hotlist command response. Returns null when there's nothing to show
+ * so callers can skip the section without leaving stray headers.
+ */
+export function formatHotListBlock(events: CalendarEventResponse[]): string | null {
+  const hot = events.filter(e => e.is_hot);
+  if (hot.length === 0) return null;
+
+  const lines = ['🔥 <b>Hot this week</b>'];
+  for (const event of hot) {
+    const time = event.time ? ` · ${formatTime(event.time)}` : '';
+    const reason = event.hot_reason ? ` — ${escapeHtml(event.hot_reason)}` : '';
+    lines.push(
+      `• <b>${escapeHtml(event.name)}</b> (${formatDate(event.date)}${time})${reason}`
+    );
+  }
+  return lines.join('\n');
+}
+
+/**
+ * Build the full weekly digest message: hot block + standard upcoming list.
+ * Pure function over the API response so it's easy to unit-test without a
+ * Telegram client.
+ */
+export function formatWeeklyDigest(response: EventsApiResponse): string {
+  const { events, total } = response;
+  const hotBlock = formatHotListBlock(events);
+
+  if (events.length === 0) {
+    return '📅 No upcoming events in the next 7 days.';
+  }
+
+  const sections: string[] = [];
+  if (hotBlock) {
+    sections.push(hotBlock);
+    sections.push('━━━━━━━━━━━━━━━━━━━');
+  }
+
+  sections.push('📅 <b>Upcoming Events (Next 7 Days)</b>');
+  sections.push('━━━━━━━━━━━━━━━━━━━');
+
+  for (const event of events) {
+    const category = event.category?.name || 'Uncategorized';
+    const time = event.time ? ` • ${formatTime(event.time)}` : '';
+    const endDate = event.end_date && event.end_date !== event.date
+      ? ` – ${formatDate(event.end_date)}`
+      : '';
+    const link = event.link ? `\n   🔗 ${escapeHtml(event.link)}` : '';
+    const flame = event.is_hot ? '🔥 ' : '';
+
+    sections.push(
+      `\n${flame}📌 <b>${escapeHtml(event.name)}</b>\n` +
+        `   ${formatDate(event.date)}${endDate}${time}\n` +
+        `   🏷 ${escapeHtml(category)}${link}`
+    );
+  }
+
+  const shown = events.length;
+  const footer = shown < total
+    ? `📊 Showing ${shown} of ${total} events`
+    : `📊 ${total} event${total === 1 ? '' : 's'} total`;
+  sections.push('\n━━━━━━━━━━━━━━━━━━━');
+  sections.push(footer);
+
+  return sections.join('\n');
+}
+
+/**
+ * Inline keyboard prompting digest readers to react. Callback data is
+ * `hot_feedback_up` / `hot_feedback_down`; the bot's callback_query handler
+ * logs these for prompt iteration before Stage 2 automation.
+ */
+export function hotFeedbackKeyboard() {
+  return Markup.inlineKeyboard([
+    [
+      Markup.button.callback('👍 Helpful', 'hot_feedback_up'),
+      Markup.button.callback('👎 Not useful', 'hot_feedback_down'),
+    ],
+  ]);
 }
