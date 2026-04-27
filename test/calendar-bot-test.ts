@@ -14,6 +14,7 @@ import {
   formatHotListBlock,
   formatWeeklyDigest,
   hotFeedbackKeyboard,
+  chunkForTelegram,
   createEvent,
   type CalendarBotConfig,
   type CalendarEventDraft,
@@ -442,14 +443,32 @@ describe('test: calendar-bot module', () => {
     });
 
     describe('hotFeedbackKeyboard', () => {
-      it('returns inline keyboard with up and down feedback buttons', () => {
+      it('returns inline keyboard with helpful and not_useful feedback buttons', () => {
         const keyboard = hotFeedbackKeyboard();
         const buttons = keyboard.reply_markup.inline_keyboard.flat();
         expect(buttons).to.have.lengthOf(2);
-        // Each button has callback_data.
         const callbackData = buttons.map((b: { callback_data?: string }) => b.callback_data);
-        expect(callbackData).to.include('hot_feedback_up');
-        expect(callbackData).to.include('hot_feedback_down');
+        // Prefix `hot_feedback:` lets the handler dispatch generically and
+        // leaves room for `:event_id` suffix in a future iteration.
+        expect(callbackData).to.include('hot_feedback:helpful');
+        expect(callbackData).to.include('hot_feedback:not_useful');
+      });
+    });
+
+    describe('chunkForTelegram', () => {
+      it('returns single chunk when message fits limit', () => {
+        const out = chunkForTelegram('short message', 4000);
+        expect(out).to.deep.equal(['short message']);
+      });
+
+      it('splits on newlines when message exceeds limit', () => {
+        const line = 'x'.repeat(50);
+        const message = Array.from({ length: 5 }, () => line).join('\n');
+        const chunks = chunkForTelegram(message, 100);
+        expect(chunks.length).to.be.greaterThan(1);
+        chunks.forEach(c => expect(c.length).to.be.lessThanOrEqual(100));
+        // No content lost.
+        expect(chunks.join('\n')).to.equal(message);
       });
     });
   });

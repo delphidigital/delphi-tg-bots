@@ -266,6 +266,7 @@ export function calendarBot(config: CalendarBotConfig): Telegraf<CalendarContext
         'I can help you manage crypto calendar events.\n\n' +
         'Available commands:\n' +
         '/upcoming - View upcoming events (next 7 days)\n' +
+        '/hotlist - Preview curator-flagged hot picks\n' +
         '/addevent - Create a new calendar event\n' +
         '/categories - List event categories\n' +
         '/help - Show this help message\n' +
@@ -278,6 +279,7 @@ export function calendarBot(config: CalendarBotConfig): Telegraf<CalendarContext
     await ctx.reply(
       '📅 <b>Delphi Calendar Bot Commands</b>\n\n' +
         '/upcoming - View upcoming events (next 7 days)\n' +
+        '/hotlist - Preview curator-flagged hot picks\n' +
         '/addevent - Create a new calendar event\n' +
         '/categories - List event categories\n' +
         '/cancel - Cancel current operation\n' +
@@ -297,49 +299,12 @@ export function calendarBot(config: CalendarBotConfig): Telegraf<CalendarContext
   bot.command('upcoming', async (ctx) => {
     await ctx.reply('⏳ Fetching upcoming events...');
 
-    const { events, total } = await fetchUpcomingEvents(config);
-
-    if (events.length === 0) {
-      await ctx.reply('📅 No upcoming events in the next 7 days.');
-      return;
-    }
-
-    let message = '📅 <b>Upcoming Events (Next 7 Days)</b>\n━━━━━━━━━━━━━━━━━━━\n';
-
-    for (const event of events) {
-      const category = event.category?.name || 'Uncategorized';
-      const time = event.time ? ` • ${formatTime(event.time)}` : '';
-      const endDate = event.end_date && event.end_date !== event.date
-        ? ` – ${formatDate(event.end_date)}`
-        : '';
-      const link = event.link ? `\n   🔗 ${escapeHtml(event.link)}` : '';
-
-      message +=
-        `\n📌 <b>${escapeHtml(event.name)}</b>\n` +
-        `   ${formatDate(event.date)}${endDate}${time}\n` +
-        `   🏷 ${escapeHtml(category)}${link}\n`;
-    }
-
-    const shown = events.length;
-    const footer = shown < total
-      ? `📊 Showing ${shown} of ${total} events`
-      : `📊 ${total} event${total === 1 ? '' : 's'} total`;
-    message += `\n━━━━━━━━━━━━━━━━━━━\n${footer}`;
+    const response = await fetchUpcomingEvents(config);
+    const message = formatWeeklyDigest(response);
 
     // Telegram has a 4096 char limit per message
     if (message.length > 4000) {
-      const chunks: string[] = [];
-      let current = '';
-      for (const line of message.split('\n')) {
-        if (current.length + line.length + 1 > 4000) {
-          chunks.push(current);
-          current = line;
-        } else {
-          current += (current ? '\n' : '') + line;
-        }
-      }
-      if (current) chunks.push(current);
-      for (const chunk of chunks) {
+      for (const chunk of chunkForTelegram(message)) {
         await ctx.reply(chunk, { parse_mode: 'HTML' });
       }
     } else {
@@ -416,17 +381,30 @@ export function calendarBot(config: CalendarBotConfig): Telegraf<CalendarContext
     const data = 'data' in ctx.callbackQuery ? ctx.callbackQuery.data : undefined;
     if (!data) return;
 
-    // Hot-list feedback: log for prompt iteration in Stage 2/3, ack to user.
-    // Acked before any other branches so the toast feedback is snappy.
-    if (data === 'hot_feedback_up' || data === 'hot_feedback_down') {
+    // Hot-list feedback: structured callback `hot_feedback:<verdict>` so a
+    // future Stage 2/3 rollup can grep [hot_feedback] log lines for verdict
+    // counts. Phase 1 is block-level (one rating per digest message); per-
+    // event scoring will be added when we have engagement signal to tune on.
+    if (data.startsWith('hot_feedback:')) {
+      const verdict = data.slice('hot_feedback:'.length);
+      const knownVerdict = verdict === 'helpful' || verdict === 'not_useful';
       const username = ctx.callbackQuery.from?.username || ctx.callbackQuery.from?.id || 'unknown';
-      const verdict = data === 'hot_feedback_up' ? 'helpful' : 'not_useful';
-      console.info(
-        `[hot_feedback] user=${username} verdict=${verdict} message_id=${ctx.callbackQuery.message?.message_id ?? 'unknown'}`
-      );
-      await ctx.answerCbQuery(
-        verdict === 'helpful' ? '🙏 Thanks for the signal!' : 'Got it — we’ll tune the picks.'
-      );
+      const messageId = ctx.callbackQuery.message?.message_id ?? 'unknown';
+
+      if (knownVerdict) {
+        console.info(
+          `[hot_feedback] user=${username} verdict=${verdict} message_id=${messageId}`
+        );
+        await ctx.answerCbQuery(
+          verdict === 'helpful' ? '🙏 Thanks for the signal!' : 'Got it — we’ll tune the picks.'
+        );
+      } else {
+        // Future-proof: ack but log so we notice if the keyboard format drifts.
+        console.warn(
+          `[hot_feedback] unknown verdict=${verdict} user=${username} message_id=${messageId}`
+        );
+        await ctx.answerCbQuery();
+      }
       return;
     }
 
@@ -713,14 +691,37 @@ export function formatWeeklyDigest(response: EventsApiResponse): string {
 
 /**
  * Inline keyboard prompting digest readers to react. Callback data is
- * `hot_feedback_up` / `hot_feedback_down`; the bot's callback_query handler
- * logs these for prompt iteration before Stage 2 automation.
+ * `hot_feedback:helpful` / `hot_feedback:not_useful` — the prefix lets the
+ * callback handler dispatch generically and lets future iterations append
+ * an event id (`hot_feedback:<verdict>:<event_id>`) without a breaking
+ * change.
  */
 export function hotFeedbackKeyboard() {
   return Markup.inlineKeyboard([
     [
-      Markup.button.callback('👍 Helpful', 'hot_feedback_up'),
-      Markup.button.callback('👎 Not useful', 'hot_feedback_down'),
+      Markup.button.callback('👍 Helpful', 'hot_feedback:helpful'),
+      Markup.button.callback('👎 Not useful', 'hot_feedback:not_useful'),
     ],
   ]);
+}
+
+/**
+ * Telegram has a 4096-char limit per message. Split a long digest on newlines
+ * so each chunk stays under 4000 chars without breaking HTML tags mid-line.
+ */
+export function chunkForTelegram(message: string, maxLen = 4000): string[] {
+  if (message.length <= maxLen) return [message];
+
+  const chunks: string[] = [];
+  let current = '';
+  for (const line of message.split('\n')) {
+    if (current.length + line.length + 1 > maxLen) {
+      if (current) chunks.push(current);
+      current = line;
+    } else {
+      current += (current ? '\n' : '') + line;
+    }
+  }
+  if (current) chunks.push(current);
+  return chunks;
 }
