@@ -177,8 +177,11 @@ export async function fetchHotEvents(
   const today = new Date().toISOString().split('T')[0];
   const endDate = new Date(Date.now() + days * 86400000).toISOString().split('T')[0];
 
+  // Soft cap on the curator side is 7 (see calendar-web /admin/hot-list);
+  // 20 matches /upcoming and gives plenty of headroom while still bounding
+  // payload size for very long curator runs.
   const url = apiUrl(
-    `/api/v1/calendar/events?start_date=${today}&end_date=${endDate}&status=published&is_hot=true&limit=10`,
+    `/api/v1/calendar/events?start_date=${today}&end_date=${endDate}&status=published&is_hot=true&limit=20`,
     config
   );
 
@@ -327,10 +330,16 @@ export function calendarBot(config: CalendarBotConfig): Telegraf<CalendarContext
       return;
     }
 
-    await ctx.reply(`${block}\n\nWas this useful?`, {
-      parse_mode: 'HTML',
-      ...hotFeedbackKeyboard(),
-    });
+    // Chunk under Telegram's 4096-char limit. Attach the feedback keyboard
+    // only to the last chunk so the buttons don't appear mid-thread.
+    const chunks = chunkForTelegram(`${block}\n\nWas this useful?`);
+    for (const [index, chunk] of chunks.entries()) {
+      const isLast = index === chunks.length - 1;
+      await ctx.reply(chunk, {
+        parse_mode: 'HTML',
+        ...(isLast ? hotFeedbackKeyboard() : {}),
+      });
+    }
   });
 
   // ==================== /categories ====================
@@ -707,21 +716,42 @@ export function hotFeedbackKeyboard() {
 
 /**
  * Telegram has a 4096-char limit per message. Split a long digest on newlines
- * so each chunk stays under 4000 chars without breaking HTML tags mid-line.
+ * first (preserves formatting), then hard-split any single line longer than
+ * `maxLen` on character boundaries as a fallback. Hard-splitting can break
+ * HTML tags mid-line, but our digest lines come from validated event fields
+ * (≤500 chars) so this only fires on pathological input.
  */
 export function chunkForTelegram(message: string, maxLen = 4000): string[] {
   if (message.length <= maxLen) return [message];
 
   const chunks: string[] = [];
   let current = '';
+
+  const flush = () => {
+    if (current) {
+      chunks.push(current);
+      current = '';
+    }
+  };
+
   for (const line of message.split('\n')) {
+    if (line.length > maxLen) {
+      // Single line longer than the limit — flush whatever's pending, then
+      // hard-split the line into bounded pieces.
+      flush();
+      for (let i = 0; i < line.length; i += maxLen) {
+        chunks.push(line.slice(i, i + maxLen));
+      }
+      continue;
+    }
+
     if (current.length + line.length + 1 > maxLen) {
-      if (current) chunks.push(current);
+      flush();
       current = line;
     } else {
       current += (current ? '\n' : '') + line;
     }
   }
-  if (current) chunks.push(current);
+  flush();
   return chunks;
 }

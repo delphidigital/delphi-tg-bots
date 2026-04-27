@@ -470,6 +470,15 @@ describe('test: calendar-bot module', () => {
         // No content lost.
         expect(chunks.join('\n')).to.equal(message);
       });
+
+      it('hard-splits a single overlong line into bounded chunks', () => {
+        const message = 'x'.repeat(250);
+        const chunks = chunkForTelegram(message, 100);
+        expect(chunks.length).to.be.greaterThan(1);
+        chunks.forEach(c => expect(c.length).to.be.lessThanOrEqual(100));
+        // No content lost for unbroken input.
+        expect(chunks.join('')).to.equal(message);
+      });
     });
   });
 });
