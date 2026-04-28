@@ -10,9 +10,16 @@ import {
   apiUrl,
   fetchCategories,
   fetchUpcomingEvents,
+  fetchHotEvents,
+  formatHotListBlock,
+  formatWeeklyDigest,
+  hotFeedbackKeyboard,
+  parseHotFeedback,
+  chunkForTelegram,
   createEvent,
   type CalendarBotConfig,
   type CalendarEventDraft,
+  type CalendarEventResponse,
 } from '../bots/calendar-bot.ts';
 
 const testConfig: CalendarBotConfig = {
@@ -292,6 +299,227 @@ describe('test: calendar-bot module', () => {
         expect(requestBody.event).to.not.have.property('end_date');
         expect(requestBody.event).to.not.have.property('description');
         expect(requestBody.event).to.not.have.property('link');
+      });
+    });
+
+    // ==================== Hot list (Phase 1) ====================
+
+    describe('fetchHotEvents', () => {
+      it('hits the API with is_hot=true filter', async () => {
+        const fetchStub = sinon.stub(globalThis, 'fetch').resolves(
+          new Response(JSON.stringify({ events: [], total: 0 }), { status: 200 })
+        );
+
+        await fetchHotEvents(testConfig);
+
+        const calledUrl = fetchStub.firstCall.args[0] as string;
+        expect(calledUrl).to.include('is_hot=true');
+        expect(calledUrl).to.include('status=published');
+      });
+
+      it('returns empty result on network error', async () => {
+        sinon.stub(globalThis, 'fetch').rejects(new Error('boom'));
+
+        const result = await fetchHotEvents(testConfig);
+        expect(result.events).to.deep.equal([]);
+        expect(result.total).to.equal(0);
+      });
+    });
+
+    describe('formatHotListBlock', () => {
+      const baseEvent: CalendarEventResponse = {
+        id: '1',
+        name: 'FOMC Decision',
+        date: '2026-05-01',
+        time: '14:00',
+        end_date: null,
+        description: null,
+        link: null,
+        category: { name: 'Fed/Macro Events', slug: 'fed-macro' },
+      };
+
+      it('returns null when no hot events', () => {
+        const events = [{ ...baseEvent, is_hot: false }];
+        expect(formatHotListBlock(events)).to.be.null;
+      });
+
+      it('returns null when input is empty', () => {
+        expect(formatHotListBlock([])).to.be.null;
+      });
+
+      it('renders header + bullets only for hot events', () => {
+        const events: CalendarEventResponse[] = [
+          { ...baseEvent, id: '1', name: 'Hot one', is_hot: true, hot_reason: 'FOMC' },
+          { ...baseEvent, id: '2', name: 'Cold one', is_hot: false },
+          { ...baseEvent, id: '3', name: 'Hot two', is_hot: true },
+        ];
+
+        const block = formatHotListBlock(events)!;
+        expect(block).to.include('🔥 <b>Hot this week</b>');
+        expect(block).to.include('Hot one');
+        expect(block).to.include('Hot two');
+        expect(block).to.not.include('Cold one');
+      });
+
+      it('appends hot_reason after em-dash when present', () => {
+        const events: CalendarEventResponse[] = [
+          { ...baseEvent, name: 'Powell speaks', is_hot: true, hot_reason: 'Post-FOMC presser' },
+        ];
+
+        const block = formatHotListBlock(events)!;
+        expect(block).to.include('Powell speaks');
+        expect(block).to.include('Post-FOMC presser');
+      });
+
+      it('escapes HTML in event names and reasons', () => {
+        const events: CalendarEventResponse[] = [
+          {
+            ...baseEvent,
+            name: 'Evil <script>alert(1)</script>',
+            is_hot: true,
+            hot_reason: 'rogue & danger',
+          },
+        ];
+
+        const block = formatHotListBlock(events)!;
+        expect(block).to.not.include('<script>');
+        expect(block).to.include('&lt;script&gt;');
+        expect(block).to.include('rogue &amp; danger');
+      });
+    });
+
+    describe('formatWeeklyDigest', () => {
+      const cold: CalendarEventResponse = {
+        id: '1',
+        name: 'Routine Speech',
+        date: '2026-05-01',
+        time: null,
+        end_date: null,
+        description: null,
+        link: null,
+        category: { name: 'Fed/Macro Events', slug: 'fed-macro' },
+        is_hot: false,
+      };
+      const hot: CalendarEventResponse = {
+        ...cold,
+        id: '2',
+        name: 'Big Unlock',
+        is_hot: true,
+        hot_reason: 'Top unlock this week',
+        category: { name: 'Token Unlocks', slug: 'token-unlocks' },
+      };
+
+      it('emits the empty-state copy when no events', () => {
+        const out = formatWeeklyDigest({ events: [], total: 0 });
+        expect(out).to.include('No upcoming events');
+      });
+
+      it('puts the hot block above the upcoming list when hot events exist', () => {
+        const out = formatWeeklyDigest({ events: [cold, hot], total: 2 });
+        const hotIdx = out.indexOf('🔥 <b>Hot this week</b>');
+        const upcomingIdx = out.indexOf('Upcoming Events');
+        expect(hotIdx).to.be.greaterThan(-1);
+        expect(upcomingIdx).to.be.greaterThan(hotIdx);
+      });
+
+      it('omits the hot block entirely when no events are flagged', () => {
+        const out = formatWeeklyDigest({ events: [cold], total: 1 });
+        expect(out).to.not.include('Hot this week');
+        expect(out).to.include('Upcoming Events');
+      });
+
+      it('prefixes hot events in the upcoming list with the flame', () => {
+        const out = formatWeeklyDigest({ events: [hot, cold], total: 2 });
+        // The hot event line in the upcoming section should have a flame.
+        expect(out).to.include('🔥 📌 <b>Big Unlock</b>');
+        expect(out).to.include('📌 <b>Routine Speech</b>');
+        // Cold event should not be flame-prefixed.
+        expect(out).to.not.include('🔥 📌 <b>Routine Speech</b>');
+      });
+
+      it('shows showing X of Y footer when shown < total', () => {
+        const out = formatWeeklyDigest({ events: [cold], total: 5 });
+        expect(out).to.include('Showing 1 of 5 events');
+      });
+    });
+
+    describe('parseHotFeedback', () => {
+      it('parses helpful verdict with no event id', () => {
+        const out = parseHotFeedback('hot_feedback:helpful');
+        expect(out).to.deep.equal({ verdict: 'helpful', eventId: undefined, known: true });
+      });
+
+      it('parses not_useful verdict with no event id', () => {
+        const out = parseHotFeedback('hot_feedback:not_useful');
+        expect(out).to.deep.equal({ verdict: 'not_useful', eventId: undefined, known: true });
+      });
+
+      it('parses verdict + event id (forward-compat)', () => {
+        // Future format: `hot_feedback:<verdict>:<event_id>` for per-event scoring.
+        // Pre-fix the slice() approach treated 'helpful:abc-123' as one verdict
+        // and logged it as unknown.
+        const out = parseHotFeedback('hot_feedback:helpful:evt-abc-123');
+        expect(out).to.deep.equal({ verdict: 'helpful', eventId: 'evt-abc-123', known: true });
+      });
+
+      it('flags unknown verdicts so handler can warn instead of silently accepting', () => {
+        const out = parseHotFeedback('hot_feedback:lukewarm');
+        expect(out.verdict).to.equal('lukewarm');
+        expect(out.known).to.be.false;
+      });
+
+      it('returns known=false for unrecognized prefix', () => {
+        const out = parseHotFeedback('something_else:helpful');
+        expect(out.known).to.be.false;
+      });
+    });
+
+    describe('hotFeedbackKeyboard', () => {
+      it('returns inline keyboard with helpful and not_useful feedback buttons', () => {
+        const keyboard = hotFeedbackKeyboard();
+        const buttons = keyboard.reply_markup.inline_keyboard.flat();
+        expect(buttons).to.have.lengthOf(2);
+        const callbackData = buttons.map((b: { callback_data?: string }) => b.callback_data);
+        // Prefix `hot_feedback:` lets the handler dispatch generically and
+        // leaves room for `:event_id` suffix in a future iteration.
+        expect(callbackData).to.include('hot_feedback:helpful');
+        expect(callbackData).to.include('hot_feedback:not_useful');
+      });
+    });
+
+    describe('chunkForTelegram', () => {
+      it('returns single chunk when message fits limit', () => {
+        const out = chunkForTelegram('short message', 4000);
+        expect(out).to.deep.equal(['short message']);
+      });
+
+      it('splits on newlines when message exceeds limit', () => {
+        const line = 'x'.repeat(50);
+        const message = Array.from({ length: 5 }, () => line).join('\n');
+        const chunks = chunkForTelegram(message, 100);
+        expect(chunks.length).to.be.greaterThan(1);
+        chunks.forEach(c => expect(c.length).to.be.lessThanOrEqual(100));
+        // No content lost.
+        expect(chunks.join('\n')).to.equal(message);
+      });
+
+      it('hard-splits a single overlong line into bounded chunks', () => {
+        const message = 'x'.repeat(250);
+        const chunks = chunkForTelegram(message, 100);
+        expect(chunks.length).to.be.greaterThan(1);
+        chunks.forEach(c => expect(c.length).to.be.lessThanOrEqual(100));
+        // No content lost for unbroken input.
+        expect(chunks.join('')).to.equal(message);
+      });
+
+      it('preserves leading and adjacent blank lines on round-trip', () => {
+        // Pre-fix bug: `current ? '\n' : ''` swallowed the leading newline
+        // because empty string was indistinguishable from "no current chunk".
+        const line = 'x'.repeat(50);
+        const message = `\n${line}\n\n${line}`;
+        const chunks = chunkForTelegram(message, 80);
+        expect(chunks.length).to.be.greaterThan(1);
+        expect(chunks.join('\n')).to.equal(message);
       });
     });
   });
