@@ -395,14 +395,14 @@ export function calendarBot(config: CalendarBotConfig): Telegraf<CalendarContext
     // counts. Phase 1 is block-level (one rating per digest message); per-
     // event scoring will be added when we have engagement signal to tune on.
     if (data.startsWith('hot_feedback:')) {
-      const verdict = data.slice('hot_feedback:'.length);
-      const knownVerdict = verdict === 'helpful' || verdict === 'not_useful';
+      const { verdict, eventId, known } = parseHotFeedback(data);
       const username = ctx.callbackQuery.from?.username || ctx.callbackQuery.from?.id || 'unknown';
       const messageId = ctx.callbackQuery.message?.message_id ?? 'unknown';
+      const eventTag = eventId ? ` event=${eventId}` : '';
 
-      if (knownVerdict) {
+      if (known) {
         console.info(
-          `[hot_feedback] user=${username} verdict=${verdict} message_id=${messageId}`
+          `[hot_feedback] user=${username} verdict=${verdict}${eventTag} message_id=${messageId}`
         );
         await ctx.answerCbQuery(
           verdict === 'helpful' ? '🙏 Thanks for the signal!' : 'Got it — we’ll tune the picks.'
@@ -410,7 +410,7 @@ export function calendarBot(config: CalendarBotConfig): Telegraf<CalendarContext
       } else {
         // Future-proof: ack but log so we notice if the keyboard format drifts.
         console.warn(
-          `[hot_feedback] unknown verdict=${verdict} user=${username} message_id=${messageId}`
+          `[hot_feedback] unknown verdict=${verdict}${eventTag} user=${username} message_id=${messageId}`
         );
         await ctx.answerCbQuery();
       }
@@ -699,6 +699,28 @@ export function formatWeeklyDigest(response: EventsApiResponse): string {
 }
 
 /**
+ * Parse the `hot_feedback:<verdict>[:<event_id>]` callback payload. The
+ * keyboard today emits just `<verdict>`; a future iteration may suffix
+ * `<event_id>` for per-event scoring. Splitting here keeps the callback
+ * handler stable across that change.
+ */
+export type HotFeedbackPayload = {
+  verdict: string;
+  eventId?: string;
+  known: boolean;
+};
+
+export function parseHotFeedback(data: string): HotFeedbackPayload {
+  const prefix = 'hot_feedback:';
+  if (!data.startsWith(prefix)) {
+    return { verdict: '', known: false };
+  }
+  const [verdict, eventId] = data.slice(prefix.length).split(':');
+  const known = verdict === 'helpful' || verdict === 'not_useful';
+  return { verdict, eventId, known };
+}
+
+/**
  * Inline keyboard prompting digest readers to react. Callback data is
  * `hot_feedback:helpful` / `hot_feedback:not_useful` — the prefix lets the
  * callback handler dispatch generically and lets future iterations append
@@ -715,22 +737,28 @@ export function hotFeedbackKeyboard() {
 }
 
 /**
- * Telegram has a 4096-char limit per message. Split a long digest on newlines
- * first (preserves formatting), then hard-split any single line longer than
- * `maxLen` on character boundaries as a fallback. Hard-splitting can break
- * HTML tags mid-line, but our digest lines come from validated event fields
- * (≤500 chars) so this only fires on pathological input.
+ * Telegram has a 4096-char limit per message. Split a long message on
+ * newlines first (preserves formatting), then hard-split any single line
+ * longer than `maxLen` on character boundaries as a fallback.
+ *
+ * Contract: `chunks.join('\n') === message` for any input where no single
+ * line exceeds `maxLen`. (When hard-splitting fires, that contract relaxes
+ * — but our digest lines come from validated event fields ≤500 chars, so
+ * the fallback only fires on pathological input.)
+ *
+ * Uses `null` to distinguish "no current chunk yet" from "current chunk is
+ * an empty string", so leading/boundary blank lines round-trip correctly.
  */
 export function chunkForTelegram(message: string, maxLen = 4000): string[] {
   if (message.length <= maxLen) return [message];
 
   const chunks: string[] = [];
-  let current = '';
+  let current: string | null = null;
 
   const flush = () => {
-    if (current) {
+    if (current !== null) {
       chunks.push(current);
-      current = '';
+      current = null;
     }
   };
 
@@ -745,11 +773,12 @@ export function chunkForTelegram(message: string, maxLen = 4000): string[] {
       continue;
     }
 
-    if (current.length + line.length + 1 > maxLen) {
+    const candidate = current === null ? line : current + '\n' + line;
+    if (candidate.length > maxLen) {
       flush();
       current = line;
     } else {
-      current += (current ? '\n' : '') + line;
+      current = candidate;
     }
   }
   flush();

@@ -14,6 +14,7 @@ import {
   formatHotListBlock,
   formatWeeklyDigest,
   hotFeedbackKeyboard,
+  parseHotFeedback,
   chunkForTelegram,
   createEvent,
   type CalendarBotConfig,
@@ -442,6 +443,37 @@ describe('test: calendar-bot module', () => {
       });
     });
 
+    describe('parseHotFeedback', () => {
+      it('parses helpful verdict with no event id', () => {
+        const out = parseHotFeedback('hot_feedback:helpful');
+        expect(out).to.deep.equal({ verdict: 'helpful', eventId: undefined, known: true });
+      });
+
+      it('parses not_useful verdict with no event id', () => {
+        const out = parseHotFeedback('hot_feedback:not_useful');
+        expect(out).to.deep.equal({ verdict: 'not_useful', eventId: undefined, known: true });
+      });
+
+      it('parses verdict + event id (forward-compat)', () => {
+        // Future format: `hot_feedback:<verdict>:<event_id>` for per-event scoring.
+        // Pre-fix the slice() approach treated 'helpful:abc-123' as one verdict
+        // and logged it as unknown.
+        const out = parseHotFeedback('hot_feedback:helpful:evt-abc-123');
+        expect(out).to.deep.equal({ verdict: 'helpful', eventId: 'evt-abc-123', known: true });
+      });
+
+      it('flags unknown verdicts so handler can warn instead of silently accepting', () => {
+        const out = parseHotFeedback('hot_feedback:lukewarm');
+        expect(out.verdict).to.equal('lukewarm');
+        expect(out.known).to.be.false;
+      });
+
+      it('returns known=false for unrecognized prefix', () => {
+        const out = parseHotFeedback('something_else:helpful');
+        expect(out.known).to.be.false;
+      });
+    });
+
     describe('hotFeedbackKeyboard', () => {
       it('returns inline keyboard with helpful and not_useful feedback buttons', () => {
         const keyboard = hotFeedbackKeyboard();
@@ -478,6 +510,16 @@ describe('test: calendar-bot module', () => {
         chunks.forEach(c => expect(c.length).to.be.lessThanOrEqual(100));
         // No content lost for unbroken input.
         expect(chunks.join('')).to.equal(message);
+      });
+
+      it('preserves leading and adjacent blank lines on round-trip', () => {
+        // Pre-fix bug: `current ? '\n' : ''` swallowed the leading newline
+        // because empty string was indistinguishable from "no current chunk".
+        const line = 'x'.repeat(50);
+        const message = `\n${line}\n\n${line}`;
+        const chunks = chunkForTelegram(message, 80);
+        expect(chunks.length).to.be.greaterThan(1);
+        expect(chunks.join('\n')).to.equal(message);
       });
     });
   });
