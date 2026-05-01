@@ -521,6 +521,22 @@ describe('test: calendar-bot module', () => {
         expect(chunks.length).to.be.greaterThan(1);
         expect(chunks.join('\n')).to.equal(message);
       });
+
+      it('keeps an overlong line and the next short line in separate chunks', () => {
+        // Each chunk is sent as its own Telegram message, so the original
+        // newline boundary between an overlong line and the next short line
+        // is preserved as a *message boundary*, not as a `\n` inside one
+        // chunk. Locking this in: an overlong line followed by a short line
+        // must produce at least one boundary that ends with the overlong
+        // line's tail and starts a fresh chunk for the short line.
+        const overlong = 'a'.repeat(150);
+        const message = `${overlong}\nshort`;
+        const chunks = chunkForTelegram(message, 100);
+        expect(chunks).to.have.lengthOf.at.least(2);
+        // Last chunk must be exactly the short line, not concatenated with
+        // any tail of the overlong line.
+        expect(chunks[chunks.length - 1]).to.equal('short');
+      });
     });
   });
 });
