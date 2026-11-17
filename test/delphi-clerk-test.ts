@@ -4,7 +4,9 @@ import {
   createRead,
   ensureNonDuplicateLink,
   fetchUrlMetadata,
+  graphemeLength,
   hydraUrl,
+  replyPrivately,
   readsErrorReply,
   ReadsApiError,
   type BotConfig,
@@ -193,6 +195,20 @@ describe('test: delphi-clerk reads through Hydra', () => {
       expect(metadata.title).to.equal('t');
     });
 
+    it('a bad or missing key is unavailable, not a page Hydra could not read', async () => {
+      for (const status of [401, 503]) {
+        fetchStub.returns(respond(status, {}));
+        let error: ReadsApiError | undefined;
+        try {
+          await fetchUrlMetadata('https://example.com/', testConfig);
+        } catch (e) {
+          error = e as ReadsApiError;
+        }
+        expect(error).to.be.instanceOf(ReadsApiError);
+        expect(error?.kind).to.equal('unavailable');
+      }
+    });
+
     it('throws when Hydra cannot fetch the page', async () => {
       fetchStub.returns(respond(502, { error_code: 'fetch_failed' }));
 
@@ -217,6 +233,17 @@ describe('test: delphi-clerk reads through Hydra', () => {
       expect(init.headers['x-tenant-id']).to.equal('delphi');
     });
 
+    it('carries on when Hydra cannot be reached or answers oddly', async () => {
+      fetchStub.rejects(new Error('ECONNRESET'));
+      await ensureNonDuplicateLink('https://example.com/post', testConfig);
+
+      fetchStub.returns(respond(200, { data: 'not a list' }));
+      await ensureNonDuplicateLink('https://example.com/post', testConfig);
+
+      fetchStub.returns(respond(200, { data: [null, { link: 'https://example.com/other' }] }));
+      await ensureNonDuplicateLink('https://example.com/post', testConfig);
+    });
+
     it("carries on when the list can't be read", async () => {
       fetchStub.returns(respond(503, {}));
       await ensureNonDuplicateLink('https://example.com/post', testConfig);
@@ -233,5 +260,50 @@ describe('test: delphi-clerk reads through Hydra', () => {
       }
       expect(thrown).to.be.true;
     });
+  });
+
+  describe('replyPrivately', () => {
+    const groupCtx = (sendMessage: sinon.SinonStub) => {
+      const reply = sinon.stub().resolves();
+      return {
+        ctx: { chat: { type: 'group' }, from: { id: 77 }, reply, telegram: { sendMessage } } as any,
+        reply,
+      };
+    };
+
+    it('sends the refusal to the sender, and only a pointer to the group', async () => {
+      const sendMessage = sinon.stub().resolves();
+      const { ctx, reply } = groupCtx(sendMessage);
+
+      await replyPrivately(ctx, 'not linked: https://members.example.com/pro-chat');
+
+      expect(sendMessage.calledWith(77, 'not linked: https://members.example.com/pro-chat')).to.be.true;
+      expect(reply.firstCall.args[0]).to.not.contain('pro-chat');
+    });
+
+    it('falls back to a group reply without details when Telegram refuses the DM', async () => {
+      const sendMessage = sinon.stub().rejects(new Error("403: bot can't initiate conversation"));
+      const { ctx, reply } = groupCtx(sendMessage);
+
+      await replyPrivately(ctx, 'not linked: https://members.example.com/pro-chat');
+
+      expect(reply.calledOnce).to.be.true;
+      expect(reply.firstCall.args[0]).to.contain('start a chat with me');
+      expect(reply.firstCall.args[0]).to.not.contain('pro-chat');
+    });
+
+    it('replies in place in a private chat', async () => {
+      const sendMessage = sinon.stub().resolves();
+      const reply = sinon.stub().resolves();
+      await replyPrivately({ chat: { type: 'private' }, from: { id: 77 }, reply, telegram: { sendMessage } } as any, 'hi');
+      expect(reply.calledWith('hi')).to.be.true;
+      expect(sendMessage.called).to.be.false;
+    });
+  });
+
+  it('graphemeLength counts characters as a reader sees them', () => {
+    expect(graphemeLength('e\u0301')).to.equal(1);
+    expect(graphemeLength('👍🏽')).to.equal(1);
+    expect(graphemeLength('abc')).to.equal(3);
   });
 });

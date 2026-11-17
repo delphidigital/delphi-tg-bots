@@ -252,13 +252,18 @@ export async function ensureNonDuplicateLink(link: string, config: BotConfig) {
       'Content-Type': 'application/json',
       [TENANT_HEADER]: TENANT,
     }
+  }).catch((e) => {
+    console.error('Could not read the reading list for the duplicate check: ', e);
+    return null;
   });
+
+  if (!response) return;
   // Only a heads-up: when the list can't be read, carry on and let the
   // create route's 409 decide.
   if (!response.ok) return;
   const json = await response.json().catch(() => ({}));
-  const matches = (json.data || []).filter(read => read.link === link);
-  if (matches.length) {
+  const reads = Array.isArray(json.data) ? json.data : [];
+  if (reads.some((read) => read?.link === link)) {
     throw new Error(ERROR_DUPLICATE_READ);
   }
 }
@@ -269,6 +274,7 @@ export const fetchUrlMetadata = async (url: string, config: BotConfig): Promise<
   const metadataUrl = hydraUrl(`/api/v1/bots/tg/reads/link-metadata?url=${encodeURIComponent(url)}`, config);
   console.log(`fetching metadata for ${url}`);
   const res = await fetch(metadataUrl, { headers: hydraHeaders(config) });
+  if (res.status === 401 || res.status === 503) throw new ReadsApiError('unavailable');
   if (res.status === 200) {
     return res.json() as UrlMetadata;
   } else {
@@ -572,17 +578,26 @@ const postRead = async (ctx: ReadsContext, config: BotConfig) => {
 };
 
 // Refusals name the sender's account, so outside a private chat they go to
-// the sender directly rather than to the group.
-const replyPrivately = async (ctx: ReadsContext, text: string) => {
-  if (ctx.chat?.type !== 'private' && ctx.from) {
-    await ctx.telegram.sendMessage(ctx.from.id, text);
-  } else {
+// the sender directly rather than to the group. Telegram refuses a message to
+// someone who never started the bot; the group then gets a reply without the
+// account details.
+export const replyPrivately = async (ctx: ReadsContext, text: string) => {
+  if (ctx.chat?.type === 'private' || !ctx.from) {
     await ctx.reply(text);
+    return;
+  }
+
+  try {
+    await ctx.telegram.sendMessage(ctx.from.id, text);
+    await ctx.reply('I sent you a direct message about this read.');
+  } catch (e) {
+    console.error('Could not message the sender privately: ', e);
+    await ctx.reply("I couldn't publish that, and couldn't message you privately - start a chat with me and tap Publish again.");
   }
 };
 
 const handlePost = async (ctx: ReadsContext, config: BotConfig) => {
-  ensureLinkSet(ctx, async () => {
+  return ensureLinkSet(ctx, async () => {
     try {
       await postRead(ctx, config);
       resetState(ctx);
@@ -697,8 +712,9 @@ const handleUpdateDescription = async (description: string, ctx: ReadsContext) =
 };
 
 const handleUpdateTitle = async (title: string, ctx: ReadsContext) => {
-  // Hydra's limit for a read's title.
-  if (title.length > 100) {
+  // Hydra's limit for a read's title, counted as Hydra counts it (characters
+  // as a reader sees them).
+  if (graphemeLength(title) > 100) {
     await ctx.reply('sorry, that title is too long (100 characters at most)');
     await handleSetTitle(ctx);
     return;
@@ -718,6 +734,9 @@ const handleUpdateAfPostTitle = async (title: string, ctx: ReadsContext) => {
   await displayCreateAfPostMenu(ctx);
 };
 
+export const graphemeLength = (str: string): number =>
+  [...new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(str)].length;
+
 const truncateString = (str: string, maxLength: number): string => {
   return str.length > maxLength ? str.substring(0, maxLength - 3) + "..." : str;
 };
@@ -732,10 +751,16 @@ const handleUpdateUrl = async (url: string, ctx: ReadsContext, config: BotConfig
 
   ctx.session.readsItem.link = cleanUrl;
 
+  let duplicate = false;
   try {
     await ensureNonDuplicateLink(cleanUrl, config);
   } catch (e) {
-    console.error('Error proccessing handleUpdateUrl: ', e);
+    // Only a duplicate stops here; anything else is left to the create route.
+    if (e.message === ERROR_DUPLICATE_READ) duplicate = true;
+    else console.error('Duplicate check failed: ', e);
+  }
+
+  if (duplicate) {
     await ctx.reply('Oops, this url was recently added already');
     resetState(ctx);
     await handleDisplayMainMenu(ctx);
@@ -749,6 +774,7 @@ const handleUpdateUrl = async (url: string, ctx: ReadsContext, config: BotConfig
     if (e instanceof ReadsApiError && e.kind === 'unavailable') {
       await ctx.reply(readsErrorReply(e));
       resetState(ctx);
+      await handleDisplayMainMenu(ctx);
       return;
     }
 
@@ -773,7 +799,9 @@ const handleUpdateUrl = async (url: string, ctx: ReadsContext, config: BotConfig
     } catch (e) {
       console.error("Error generating summary: ", e);
       ctx.session.readsItem.description = description ? truncateString(description,500) : "";
-      await ctx.reply('sorry, generating the AI summary failed for that url. falling back to metadata description.');
+      await ctx.reply(description
+        ? 'sorry, generating the AI summary failed for that url. falling back to metadata description.'
+        : 'sorry, generating the AI summary failed for that url. set a description yourself if you want one.');
     }
   } else {
     // Twitter URL, save the tweet text as the description
