@@ -48,9 +48,13 @@ const defaultTagsForDomain: Record<string, ReadsTag[]> = {
 } as const;
 
 interface DelphiApi {
-  mpcCreateReadApiKey: string;
+  // Notes (AF posts) still go through the members portal BFF.
   mpcCreateAfApiKey: string;
   baseUrl: string;
+  // Reads go to Hydra (hydra#2575, #2576) with the Reads bot's own key.
+  // Either unset: Reads replies "temporarily unavailable" and Notes go on.
+  hydraBaseUrl?: string;
+  readsApiKey?: string;
   readingListId: string;
 }
 
@@ -198,31 +202,73 @@ const delphiApiUrl = (path: string, config: BotConfig) => {
   return `${config.delphiApi.baseUrl}${path}`
 };
 
+const TENANT_HEADER = 'x-tenant-id';
+const TENANT = 'delphi';
+
+export const hydraUrl = (path: string, config: BotConfig) => {
+  return `${config.delphiApi.hydraBaseUrl}${path}`;
+};
+
+const readsConfigured = (config: BotConfig) =>
+  !!(config.delphiApi.hydraBaseUrl && config.delphiApi.readsApiKey);
+
+const hydraHeaders = (config: BotConfig) => ({
+  'Content-Type': 'application/json',
+  [TENANT_HEADER]: TENANT,
+  Authorization: `Bearer ${config.delphiApi.readsApiKey}`,
+});
+
+export type ReadsErrorKind = 'not_linked' | 'not_employee' | 'duplicate' | 'invalid' | 'unavailable' | 'unknown';
+
+// A refusal from Hydra's Reads routes, with what the sender needs to act on it.
+export class ReadsApiError extends Error {
+  kind: ReadsErrorKind;
+  linkUrl?: string;
+  details?: string;
+
+  constructor(kind: ReadsErrorKind, opts: { linkUrl?: string; details?: string } = {}) {
+    super(kind);
+    this.kind = kind;
+    this.linkUrl = opts.linkUrl;
+    this.details = opts.details;
+  }
+}
+
 // download file from TG and store locally so that it can be transcribed
 export async function downloadVoiceFile(fileId: string, uniqueFileId: string) {
   const filePath = await getTgFilePathFromFileId(fileId);
   await downloadVoiceFileFromTg(filePath, uniqueFileId);
 }
 
+// An early check so the sender hears before filling in the read; Hydra's
+// create route refuses a duplicate either way (409).
 export async function ensureNonDuplicateLink(link: string, config: BotConfig) {
-  const readsUrl = delphiApiUrl(`/api/v1/lists/${config.delphiApi.readingListId}/items?page=1&limit=50`, config);
+  if (!readsConfigured(config)) return;
+
+  const readsUrl = hydraUrl(`/api/v1/lists/${config.delphiApi.readingListId}/items?page=1&limit=50`, config);
   const response = await fetch(readsUrl, {
     method: 'GET',
     headers: {
-      'Content-Type': 'application/json'
+      'Content-Type': 'application/json',
+      [TENANT_HEADER]: TENANT,
     }
   });
-  const json = await response.json();
-  const matches = json.data.filter(read => read.link === link);
+  // Only a heads-up: when the list can't be read, carry on and let the
+  // create route's 409 decide.
+  if (!response.ok) return;
+  const json = await response.json().catch(() => ({}));
+  const matches = (json.data || []).filter(read => read.link === link);
   if (matches.length) {
     throw new Error(ERROR_DUPLICATE_READ);
   }
 }
 
-const fetchUrlMetadata = async (url: string, config: BotConfig): Promise<UrlMetadata> => {
-  const metadataUrl = delphiApiUrl(`/api/v1/reads/link-metadata?url=${url}`, config);
-  console.log(`fetching metadata for ${url} from ${metadataUrl}`);
-  const res = await fetch(metadataUrl);
+export const fetchUrlMetadata = async (url: string, config: BotConfig): Promise<UrlMetadata> => {
+  if (!readsConfigured(config)) throw new ReadsApiError('unavailable');
+
+  const metadataUrl = hydraUrl(`/api/v1/bots/tg/reads/link-metadata?url=${encodeURIComponent(url)}`, config);
+  console.log(`fetching metadata for ${url}`);
+  const res = await fetch(metadataUrl, { headers: hydraHeaders(config) });
   if (res.status === 200) {
     return res.json() as UrlMetadata;
   } else {
@@ -449,40 +495,89 @@ const postAfPost = async(ctx: ReadsContext, config: BotConfig) => {
   }
 }
 
-const postRead = async (ctx: ReadsContext, config: BotConfig) => {
-  const { delphiApi: { mpcCreateReadApiKey } } = config;
-  const postReadsUrl = delphiApiUrl('/api/v1/bots/tg/create-read', config);
-  const tg_username = ctx.callbackQuery.from.username;
-  const item = { ...ctx.session.readsItem };
+// Creates the read in Hydra as the sender, identified by Telegram's numeric
+// user id (the username is only shown in the internal announcement). Hydra
+// announces the read in the channels. Throws ReadsApiError on a refusal.
+export const createRead = async (
+  item: ReadsItem,
+  from: { id: number; username?: string } | undefined,
+  config: BotConfig,
+) => {
+  if (!readsConfigured(config)) throw new ReadsApiError('unavailable');
+  if (!from) throw new ReadsApiError('unknown');
 
-  if (!item.description) {
-    delete item.description;
-  }
+  const read: Partial<ReadsItem> & { tg_user_id: number; tg_username?: string } = {
+    ...item,
+    tg_user_id: from.id,
+    tg_username: from.username,
+  };
 
-  await ctx.reply('Attempting to publish...');
-  const response = await fetch(postReadsUrl, {
+  if (!read.description) delete read.description;
+  if (!read.image_url) delete read.image_url;
+
+  const response = await fetch(hydraUrl('/api/v1/bots/tg/reads', config), {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': mpcCreateReadApiKey
-    },
-    body: JSON.stringify({ ...item, tg_username })
+    headers: hydraHeaders(config),
+    body: JSON.stringify({ read }),
   });
 
-  if (response.status === 403) {
-    throw new Error(ERROR_UNAUTHORIZED);
-  } else if (response.status === 409) {
-    throw new Error(ERROR_DUPLICATE_READ);
-  } else if (response.status > 201) {
-    const json = await response.json();
-    if (json.errors) {
-      let msg = json.message + ': ';
-      (Object.keys(json.errors)).forEach(e => {
-        msg += `[${e}]: ${json.errors[e][0]}. `;
-      });
-      await ctx.reply(msg);
+  if (response.status === 201) return;
+
+  const json = await response.json().catch(() => ({}));
+
+  switch (response.status) {
+    case 403:
+      if (json.error_code === 'not_linked') throw new ReadsApiError('not_linked', { linkUrl: json.link_url });
+      if (json.error_code === 'not_employee') throw new ReadsApiError('not_employee');
+      throw new ReadsApiError('unavailable');
+    case 409:
+      throw new ReadsApiError('duplicate');
+    case 400:
+    case 422: {
+      const details = json.errors
+        ? Object.keys(json.errors).map((field) => `[${field}]: ${json.errors[field][0]}`).join('. ')
+        : undefined;
+      throw new ReadsApiError('invalid', { details });
     }
-    throw new Error(ERROR_UNKNOWN);
+    case 401:
+    case 503:
+      throw new ReadsApiError('unavailable');
+    default:
+      throw new ReadsApiError('unknown');
+  }
+};
+
+export const readsErrorReply = (error: ReadsApiError): string => {
+  switch (error.kind) {
+    case 'not_linked':
+      return "Your Telegram account isn't linked to your Delphi account yet. " +
+        `Link it here: ${error.linkUrl || 'members.delphidigital.io/pro-chat'} - then tap Publish again.`;
+    case 'not_employee':
+      return 'Reads can only be posted by Delphi employees. If you are one, ask Engineering to check your account.';
+    case 'duplicate':
+      return 'Oops, this item was already added recently.';
+    case 'invalid':
+      return `That read wasn't accepted${error.details ? `: ${error.details}` : ''}. Fix it and tap Publish again.`;
+    case 'unavailable':
+      return 'Reads is temporarily unavailable. Try again in a little while.';
+    default:
+      return 'Oops, something went wrong - try to publish again or start over';
+  }
+};
+
+// ctx.from is the sender for the Publish button and the /publish command.
+const postRead = async (ctx: ReadsContext, config: BotConfig) => {
+  await ctx.reply('Attempting to publish...');
+  await createRead(ctx.session.readsItem, ctx.from, config);
+};
+
+// Refusals name the sender's account, so outside a private chat they go to
+// the sender directly rather than to the group.
+const replyPrivately = async (ctx: ReadsContext, text: string) => {
+  if (ctx.chat?.type !== 'private' && ctx.from) {
+    await ctx.telegram.sendMessage(ctx.from.id, text);
+  } else {
+    await ctx.reply(text);
   }
 };
 
@@ -495,17 +590,16 @@ const handlePost = async (ctx: ReadsContext, config: BotConfig) => {
       await handleDisplayMainMenu(ctx);
     } catch (e) {
       console.error('Error publishing read: ', e);
-      switch (e.message) {
-        case ERROR_UNAUTHORIZED:
-          await ctx.reply('Unauthorized: reach out to engineering for assistance.');
-          break;
-        case ERROR_DUPLICATE_READ:
-          await ctx.reply('Oops, this item was already added recently.');
+      if (e instanceof ReadsApiError) {
+        await replyPrivately(ctx, readsErrorReply(e));
+        // The draft is kept so the sender can publish again, except for a
+        // duplicate, which there is no point retrying.
+        if (e.kind === 'duplicate') {
           resetState(ctx);
           await handleDisplayMainMenu(ctx);
-          break;
-        default:
-          await ctx.reply('Oops, something went wrong - try to publish again or start over');
+        }
+      } else {
+        await ctx.reply(readsErrorReply(new ReadsApiError('unknown')));
       }
     }
   });
@@ -603,6 +697,13 @@ const handleUpdateDescription = async (description: string, ctx: ReadsContext) =
 };
 
 const handleUpdateTitle = async (title: string, ctx: ReadsContext) => {
+  // Hydra's limit for a read's title.
+  if (title.length > 100) {
+    await ctx.reply('sorry, that title is too long (100 characters at most)');
+    await handleSetTitle(ctx);
+    return;
+  }
+
   ctx.session.readsItem.title = title;
   await nextCreateReadBuildState(ctx);
 };
@@ -632,20 +733,29 @@ const handleUpdateUrl = async (url: string, ctx: ReadsContext, config: BotConfig
   ctx.session.readsItem.link = cleanUrl;
 
   try {
-    metadata = await fetchUrlMetadata(cleanUrl, config);
     await ensureNonDuplicateLink(cleanUrl, config);
   } catch (e) {
     console.error('Error proccessing handleUpdateUrl: ', e);
-    if (e.message === ERROR_DUPLICATE_READ) {
-      await ctx.reply('Oops, this url was recently added already');
+    await ctx.reply('Oops, this url was recently added already');
+    resetState(ctx);
+    await handleDisplayMainMenu(ctx);
+    return;
+  }
+
+  try {
+    metadata = await fetchUrlMetadata(cleanUrl, config);
+  } catch (e) {
+    console.error('Error fetching url metadata: ', e);
+    if (e instanceof ReadsApiError && e.kind === 'unavailable') {
+      await ctx.reply(readsErrorReply(e));
       resetState(ctx);
-      await handleDisplayMainMenu(ctx);
       return;
     }
 
-    await ctx.reply('sorry, I could not fetch that url');
-    await handleNewRead(ctx);
-    return;
+    // Hydra could not read the page (blocked, down, an X post the preview
+    // service refused): carry on, and the sender fills the fields in.
+    await ctx.reply("I couldn't fetch that page's details - set a title (and description) yourself.");
+    metadata = {};
   }
 
   const { description, image, title } = metadata;
