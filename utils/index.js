@@ -1,1 +1,1 @@
-export const mask = (input) => input.replaceAll(/./g, '*');
+export const mask = (input) => (input ?? '').replaceAll(/./g, '*');

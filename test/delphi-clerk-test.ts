@@ -1,10 +1,13 @@
 import { expect } from 'chai';
 import sinon from 'sinon';
+import axios from 'axios';
+import { mask } from '../utils/index.js';
 import {
   createRead,
   ensureNonDuplicateLink,
   fetchUrlMetadata,
   graphemeLength,
+  handleUpdateUrl,
   hydraUrl,
   replyPrivately,
   readsErrorReply,
@@ -305,5 +308,35 @@ describe('test: delphi-clerk reads through Hydra', () => {
     expect(graphemeLength('e\u0301')).to.equal(1);
     expect(graphemeLength('👍🏽')).to.equal(1);
     expect(graphemeLength('abc')).to.equal(3);
+  });
+
+  describe('handleUpdateUrl', () => {
+    const privateCtx = () => ({
+      chat: { type: 'private' },
+      from: { id: 77 },
+      session: { state: 'none', readsItem: {}, afPostItem: {} },
+      reply: sinon.stub().resolves(),
+      telegram: { sendMessage: sinon.stub().resolves() },
+    }) as any;
+
+    it('never summarises a page Hydra did not fetch (a refused address)', async () => {
+      const axiosGet = sinon.stub(axios, 'get').resolves({ data: '<p>internal</p>' });
+      fetchStub.callsFake((url: string) =>
+        String(url).includes('link-metadata')
+          ? respond(422, { error_code: 'url_refused' })
+          : respond(200, { data: [] }),
+      );
+      const ctx = privateCtx();
+
+      await handleUpdateUrl('http://169.254.169.254/latest', ctx, testConfig, {});
+
+      expect(axiosGet.called).to.be.false;
+      expect(ctx.session.readsItem.description).to.equal('');
+    });
+  });
+
+  it('mask tolerates an unset value', () => {
+    expect(mask(undefined)).to.equal('');
+    expect(mask('abc')).to.equal('***');
   });
 });

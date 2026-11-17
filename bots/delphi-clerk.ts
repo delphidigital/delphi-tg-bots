@@ -741,7 +741,7 @@ const truncateString = (str: string, maxLength: number): string => {
   return str.length > maxLength ? str.substring(0, maxLength - 3) + "..." : str;
 };
 
-const handleUpdateUrl = async (url: string, ctx: ReadsContext, config: BotConfig, openai: any) => {
+export const handleUpdateUrl = async (url: string, ctx: ReadsContext, config: BotConfig, openai: any) => {
   resetState(ctx);
 
   await ctx.reply('fetching that url, hang on a sec...');
@@ -767,9 +767,13 @@ const handleUpdateUrl = async (url: string, ctx: ReadsContext, config: BotConfig
     return;
   }
 
+  // Only a page Hydra fetched (public address, checked) is summarised: the
+  // summariser requests the URL itself without that check.
+  let fetched = true;
   try {
     metadata = await fetchUrlMetadata(cleanUrl, config);
   } catch (e) {
+    fetched = false;
     console.error('Error fetching url metadata: ', e);
     if (e instanceof ReadsApiError && e.kind === 'unavailable') {
       await ctx.reply(readsErrorReply(e));
@@ -790,18 +794,19 @@ const handleUpdateUrl = async (url: string, ctx: ReadsContext, config: BotConfig
     // not twitter, so save the title
     ctx.session.readsItem.title = title || "";
     // Generate and set the summary
-    try {
-      //const openai = new OpenAI({
-      //  apiKey: config.openaiKey,
-      //});
-      const summary = await summarizeURL(url, openai || null);
-      ctx.session.readsItem.description = truncateString(summary,500);
-    } catch (e) {
-      console.error("Error generating summary: ", e);
-      ctx.session.readsItem.description = description ? truncateString(description,500) : "";
-      await ctx.reply(description
-        ? 'sorry, generating the AI summary failed for that url. falling back to metadata description.'
-        : 'sorry, generating the AI summary failed for that url. set a description yourself if you want one.');
+    if (!fetched) {
+      ctx.session.readsItem.description = "";
+    } else {
+      try {
+        const summary = await summarizeURL(url, openai || null);
+        ctx.session.readsItem.description = truncateString(summary,500);
+      } catch (e) {
+        console.error("Error generating summary: ", e);
+        ctx.session.readsItem.description = description ? truncateString(description,500) : "";
+        await ctx.reply(description
+          ? 'sorry, generating the AI summary failed for that url. falling back to metadata description.'
+          : 'sorry, generating the AI summary failed for that url. set a description yourself if you want one.');
+      }
     }
   } else {
     // Twitter URL, save the tweet text as the description
