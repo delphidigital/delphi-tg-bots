@@ -9,6 +9,7 @@ import {
   graphemeLength,
   handleUpdateUrl,
   hydraUrl,
+  logReadsError,
   replyPrivately,
   readsErrorReply,
   ReadsApiError,
@@ -103,6 +104,18 @@ describe('test: delphi-clerk reads through Hydra', () => {
       expect(error).to.be.instanceOf(ReadsApiError);
       expect(error.kind).to.equal('not_linked');
       expect(error.linkUrl).to.equal('https://members.example.com/pro-chat');
+      expect(error.status).to.equal(403);
+    });
+
+    it('a 403 Hydra does not explain keeps its status and error code', async () => {
+      const error = await refusal(403, { error_code: 'forbidden' });
+      expect(error.kind).to.equal('unavailable');
+      expect(error.status).to.equal(403);
+      expect(error.details).to.equal('forbidden');
+    });
+
+    it('a body of null is read as no body', async () => {
+      expect((await refusal(403, null)).kind).to.equal('unavailable');
     });
 
     it('a 400 without field errors is invalid with no details', async () => {
@@ -210,6 +223,11 @@ describe('test: delphi-clerk reads through Hydra', () => {
         expect(error).to.be.instanceOf(ReadsApiError);
         expect(error?.kind).to.equal('unavailable');
       }
+    });
+
+    it('a 200 with a null body is no metadata', async () => {
+      fetchStub.returns(respond(200, null));
+      expect(await fetchUrlMetadata('https://example.com/', testConfig)).to.deep.equal({});
     });
 
     it('throws when Hydra cannot fetch the page', async () => {
@@ -332,6 +350,94 @@ describe('test: delphi-clerk reads through Hydra', () => {
 
       expect(axiosGet.called).to.be.false;
       expect(ctx.session.readsItem.description).to.equal('');
+    });
+
+    const metadataFails = (status: number, body: unknown) => {
+      sinon.stub(console, 'log');
+      const error = sinon.stub(console, 'error');
+      fetchStub.callsFake((url: string) =>
+        String(url).includes('link-metadata') ? respond(status, body) : respond(200, { data: [] }),
+      );
+      return error;
+    };
+    const replies = (ctx: any) => ctx.reply.args.map(([text]: [string]) => text);
+
+    for (const [status, body] of [[500, {}], [502, {}], [502, null]] as const) {
+      it(`a metadata ${status} without Hydra's error code is an error, and the sender fills the fields in`, async () => {
+        const error = metadataFails(status, body);
+        const ctx = privateCtx();
+
+        await handleUpdateUrl('https://example.com/post', ctx, testConfig, {});
+
+        expect(error.args.map(([line]) => line)).to.deep.equal([
+          `Error fetching url metadata: unknown (HTTP ${status})`,
+        ]);
+        expect(replies(ctx)).to.include("I couldn't fetch that page's details - set a title (and description) yourself.");
+        expect(ctx.session.readsItem.link).to.equal('https://example.com/post');
+      });
+    }
+
+    it('a metadata 503 is an error line, and the sender is told Reads is unavailable', async () => {
+      const error = metadataFails(503, {});
+      const ctx = privateCtx();
+
+      await handleUpdateUrl('https://example.com/post', ctx, testConfig, {});
+
+      expect(error.args.map(([line]) => line)).to.deep.equal(['Error fetching url metadata: unavailable (HTTP 503)']);
+      expect(replies(ctx)).to.include('Reads is temporarily unavailable. Try again in a little while.');
+      expect(ctx.session.readsItem.link).to.equal('');
+      expect(ctx.session.state).to.equal('none');
+    });
+
+    for (const [status, code] of [[400, 'invalid_url'], [422, 'url_refused'], [502, 'fetch_failed']] as const) {
+      it(`a page Hydra could not read (${status} ${code}) is logged once, as one line`, async () => {
+        const log = sinon.stub(console, 'log');
+        const error = sinon.stub(console, 'error');
+        fetchStub.callsFake((url: string) =>
+          String(url).includes('link-metadata')
+            ? respond(status, { error_code: code })
+            : respond(200, { data: [] }),
+        );
+
+        await handleUpdateUrl('https://example.com/post', privateCtx(), testConfig, {});
+
+        expect(error.called).to.be.false;
+        expect(log.args.filter(([line]) => String(line).includes(`received ${status}`))).to.have.length(1);
+      });
+    }
+  });
+
+  describe('logReadsError', () => {
+    it("logs a sender's refusal as one line, without the error object", () => {
+      const log = sinon.stub(console, 'log');
+      const error = sinon.stub(console, 'error');
+
+      logReadsError('Read not published', new ReadsApiError('not_linked', { status: 403 }));
+      logReadsError('Read not published', new ReadsApiError('invalid', { status: 422, details: '[title]: too long' }));
+
+      expect(error.called).to.be.false;
+      expect(log.args).to.deep.equal([
+        ['Read not published: not_linked (HTTP 403)'],
+        ['Read not published: invalid (HTTP 422) - [title]: too long'],
+      ]);
+    });
+
+    it('logs Hydra being unavailable or failing as an error line', () => {
+      sinon.stub(console, 'log');
+      const error = sinon.stub(console, 'error');
+
+      logReadsError('Read not published', new ReadsApiError('unknown', { status: 500 }));
+
+      expect(error.args).to.deep.equal([['Read not published: unknown (HTTP 500)']]);
+    });
+
+    it('keeps the full error for anything that is not a Reads refusal', () => {
+      const error = sinon.stub(console, 'error');
+      const boom = new Error('ECONNRESET');
+
+      logReadsError('Read not published', boom);
+
+      expect(error.args).to.deep.equal([['Read not published: ', boom]]);
     });
   });
 

@@ -20,6 +20,10 @@ type SectorSlug = 'ai' | 'general' | 'finance' | 'infrastructure' | 'macro-marke
 const ERROR_UNAUTHORIZED = 'ERROR_UNAUTHORIZED';
 const ERROR_UNKNOWN = 'ERROR_UNKNOWN';
 const ERROR_DUPLICATE_READ = 'ERROR_DUPLICATE_READ';
+const ERROR_METADATA_FETCH = 'ERROR_METADATA_FETCH';
+const NOT_CONFIGURED = 'Hydra reads not configured';
+// link-metadata's answers for a page it could not or would not read.
+const PAGE_UNREADABLE: Record<number, string> = { 400: 'invalid_url', 422: 'url_refused', 502: 'fetch_failed' };
 
 const types: Option<ReadsTag>[] = [
   { slug: 'reads', title: 'Reads' },
@@ -225,14 +229,33 @@ export class ReadsApiError extends Error {
   kind: ReadsErrorKind;
   linkUrl?: string;
   details?: string;
+  status?: number;
 
-  constructor(kind: ReadsErrorKind, opts: { linkUrl?: string; details?: string } = {}) {
+  constructor(kind: ReadsErrorKind, opts: { linkUrl?: string; details?: string; status?: number } = {}) {
     super(kind);
     this.kind = kind;
     this.linkUrl = opts.linkUrl;
     this.details = opts.details;
+    this.status = opts.status;
   }
 }
+
+// The sender's own refusals (not linked, not an employee, a duplicate, a
+// field Hydra rejected) are expected, so they log one line, not a stack.
+// Hydra being unreachable or answering oddly is logged as an error; anything
+// that is not a Reads refusal keeps its full error.
+const READS_REFUSALS: ReadsErrorKind[] = ['not_linked', 'not_employee', 'duplicate', 'invalid'];
+
+export const logReadsError = (prefix: string, e: unknown) => {
+  if (!(e instanceof ReadsApiError)) {
+    console.error(`${prefix}: `, e);
+    return;
+  }
+
+  const line = `${prefix}: ${e.kind}${e.status ? ` (HTTP ${e.status})` : ''}${e.details ? ` - ${e.details}` : ''}`;
+  if (READS_REFUSALS.includes(e.kind)) console.log(line);
+  else console.error(line);
+};
 
 // download file from TG and store locally so that it can be transcribed
 export async function downloadVoiceFile(fileId: string, uniqueFileId: string) {
@@ -269,18 +292,23 @@ export async function ensureNonDuplicateLink(link: string, config: BotConfig) {
 }
 
 export const fetchUrlMetadata = async (url: string, config: BotConfig): Promise<UrlMetadata> => {
-  if (!readsConfigured(config)) throw new ReadsApiError('unavailable');
+  if (!readsConfigured(config)) throw new ReadsApiError('unavailable', { details: NOT_CONFIGURED });
 
   const metadataUrl = hydraUrl(`/api/v1/bots/tg/reads/link-metadata?url=${encodeURIComponent(url)}`, config);
   console.log(`fetching metadata for ${url}`);
   const res = await fetch(metadataUrl, { headers: hydraHeaders(config) });
-  if (res.status === 401 || res.status === 503) throw new ReadsApiError('unavailable');
-  if (res.status === 200) {
-    return res.json() as UrlMetadata;
-  } else {
+  if (res.status === 401 || res.status === 503) throw new ReadsApiError('unavailable', { status: res.status });
+  if (res.status === 200) return ((await res.json()) ?? {}) as UrlMetadata;
+
+  // Hydra's answers for a page it could not or would not read: expected, so
+  // one line. Anything else, including a 502 from the gateway in front of a
+  // Hydra that is down (no error_code), is Hydra failing, and is an error.
+  const json = (await res.json().catch(() => null)) ?? {};
+  if (PAGE_UNREADABLE[res.status] && json.error_code === PAGE_UNREADABLE[res.status]) {
     console.log(`received ${res.status} fetching url metadata for ${url}`);
-    throw new Error('fetch url metadata error');
+    throw new Error(ERROR_METADATA_FETCH);
   }
+  throw new ReadsApiError('unknown', { status: res.status });
 };
 
 const ensureRequiredAfPostFieldsSet = async (ctx: ReadsContext, callback: Function) => {
@@ -509,7 +537,7 @@ export const createRead = async (
   from: { id: number; username?: string } | undefined,
   config: BotConfig,
 ) => {
-  if (!readsConfigured(config)) throw new ReadsApiError('unavailable');
+  if (!readsConfigured(config)) throw new ReadsApiError('unavailable', { details: NOT_CONFIGURED });
   if (!from) throw new ReadsApiError('unknown');
 
   const read: Partial<ReadsItem> & { tg_user_id: number; tg_username?: string } = {
@@ -529,27 +557,28 @@ export const createRead = async (
 
   if (response.status === 201) return;
 
-  const json = await response.json().catch(() => ({}));
+  const json = (await response.json().catch(() => null)) ?? {};
+  const status = response.status;
 
-  switch (response.status) {
+  switch (status) {
     case 403:
-      if (json.error_code === 'not_linked') throw new ReadsApiError('not_linked', { linkUrl: json.link_url });
-      if (json.error_code === 'not_employee') throw new ReadsApiError('not_employee');
-      throw new ReadsApiError('unavailable');
+      if (json.error_code === 'not_linked') throw new ReadsApiError('not_linked', { linkUrl: json.link_url, status });
+      if (json.error_code === 'not_employee') throw new ReadsApiError('not_employee', { status });
+      throw new ReadsApiError('unavailable', { status, details: json.error_code });
     case 409:
-      throw new ReadsApiError('duplicate');
+      throw new ReadsApiError('duplicate', { status });
     case 400:
     case 422: {
       const details = json.errors
         ? Object.keys(json.errors).map((field) => `[${field}]: ${json.errors[field][0]}`).join('. ')
         : undefined;
-      throw new ReadsApiError('invalid', { details });
+      throw new ReadsApiError('invalid', { details, status });
     }
     case 401:
     case 503:
-      throw new ReadsApiError('unavailable');
+      throw new ReadsApiError('unavailable', { status });
     default:
-      throw new ReadsApiError('unknown');
+      throw new ReadsApiError('unknown', { status });
   }
 };
 
@@ -604,7 +633,7 @@ const handlePost = async (ctx: ReadsContext, config: BotConfig) => {
       await ctx.reply('Item has been published. Paste another URL to start over or choose from below options:');
       await handleDisplayMainMenu(ctx);
     } catch (e) {
-      console.error('Error publishing read: ', e);
+      logReadsError('Read not published', e);
       if (e instanceof ReadsApiError) {
         await replyPrivately(ctx, readsErrorReply(e));
         // The draft is kept so the sender can publish again, except for a
@@ -774,7 +803,9 @@ export const handleUpdateUrl = async (url: string, ctx: ReadsContext, config: Bo
     metadata = await fetchUrlMetadata(cleanUrl, config);
   } catch (e) {
     fetched = false;
-    console.error('Error fetching url metadata: ', e);
+    // fetchUrlMetadata already logged a page Hydra could not read; every
+    // other failure is logged here.
+    if (!(e instanceof Error && e.message === ERROR_METADATA_FETCH)) logReadsError('Error fetching url metadata', e);
     if (e instanceof ReadsApiError && e.kind === 'unavailable') {
       await ctx.reply(readsErrorReply(e));
       resetState(ctx);
