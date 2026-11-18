@@ -32,11 +32,22 @@ npm run start:dev
 
 Dev mode will automatically configure smee to proxy requests to your local server.
 
-To simulate hitting the live endpoints to create a Read or an AF post, temporarily update fetch calls to use URLs with:
-```
-http://localhost:5555/af
-http://localhost:5555/reads
-```
+Reads talk to Hydra (`HYDRA_API_BASE_URL`, e.g. a local Hydra on
+`http://localhost:4000`) with `HYDRA_READS_API_KEY`, which must equal that
+Hydra's `READS_BOT_API_KEY`. `DELPHI_READS_READING_LIST_ID` is Hydra's reading
+list (Beta 9, Prod 1). Notes (AF posts) still go to the members portal
+(`DELPHI_API_BASE_URL`, `DELPHI_AF_API_KEY`).
+
+## How Reads work
+
+- The link's title, description and image come from Hydra's
+  `GET /api/v1/bots/tg/reads/link-metadata`.
+- Publishing calls Hydra's `POST /api/v1/bots/tg/reads` as the sender, by
+  Telegram user id. Hydra checks that the id is linked to a Delphi account
+  that is an employee, stores the read and announces it in the Telegram
+  channels.
+- A sender whose Telegram isn't linked is told to link it on the page Hydra
+  returns (the Pro chat page); their draft is kept so they can publish again.
 
 ## Bot Commands
 
@@ -61,6 +72,8 @@ help - Get help or provide feedback
 
 ## Deployment
 
+A push to `beta` deploys Beta and a push to `main` deploys Prod
+(`.github/workflows/deploy.yml`). Set any new Fly secrets on the app first.
 
 ```
 # deploy to beta/staging environment

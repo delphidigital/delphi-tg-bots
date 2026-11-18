@@ -12,7 +12,7 @@ dotenv.config({ debug: true });
 
 const {
   DELPHI_API_BASE_URL,
-  DELPHI_READS_API_KEY,
+  HYDRA_READS_API_KEY,
   DELPHI_AF_API_KEY,
   DELPHI_READS_BOT_TOKEN,
   DELPHI_READS_WEBHOOK_URL,
@@ -29,7 +29,11 @@ const {
 
 if (!DELPHI_AF_API_KEY) throw new Error('"DELPHI_AF_API_KEY" env var is required!');
 if (!DELPHI_READS_READING_LIST_ID) throw new Error('"DELPHI_READS_READING_LIST_ID" env var is required!');
-if (!DELPHI_READS_API_KEY) throw new Error('"DELPHI_READS_API_KEY" env var is required!');
+// Reads needs Hydra. Without these the server still starts (Notes and the
+// Calendar bot keep working) and Reads answers "temporarily unavailable".
+if (!HYDRA_API_BASE_URL || !HYDRA_READS_API_KEY) {
+  console.warn('Reads: DISABLED until HYDRA_API_BASE_URL and HYDRA_READS_API_KEY are set');
+}
 if (!DELPHI_API_BASE_URL) throw new Error('"DELPHI_API_BASE_URL" env var is required!');
 if (!DELPHI_READS_BOT_TOKEN) throw new Error('"DELPHI_READS_BOT_TOKEN" env var is required!');
 if (!DELPHI_READS_WEBHOOK_URL) throw new Error('"DELPHI_READS_WEBHOOK_URL" env var is required!');
@@ -41,9 +45,10 @@ const clerkBotConfiguration: BotConfig = {
   botToken: DELPHI_READS_BOT_TOKEN,
   openaiKey: OPENAI_API_KEY,
   delphiApi: {
-    mpcCreateReadApiKey: DELPHI_READS_API_KEY,
     mpcCreateAfApiKey: DELPHI_AF_API_KEY,
     baseUrl: DELPHI_API_BASE_URL,
+    hydraBaseUrl: HYDRA_API_BASE_URL,
+    readsApiKey: HYDRA_READS_API_KEY,
     readingListId: DELPHI_READS_READING_LIST_ID,
   },
 };
@@ -52,9 +57,10 @@ const readsBot = clerkBot(clerkBotConfiguration);
 
 console.log('Reads Bot Configuration:', {
   DELPHI_API_BASE_URL,
+  HYDRA_API_BASE_URL,
   DELPHI_READS_WEBHOOK_URL,
   DELPHI_READS_BOT_TOKEN: mask(DELPHI_READS_BOT_TOKEN),
-  DELPHI_READS_API_KEY: mask(DELPHI_READS_API_KEY),
+  HYDRA_READS_API_KEY: mask(HYDRA_READS_API_KEY ?? ''),
   DELPHI_AF_API_KEY: mask(DELPHI_AF_API_KEY),
 });
 
